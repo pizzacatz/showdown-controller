@@ -7,7 +7,7 @@ mainline-games feel, layered over the normal web UI.
 
 Mouse and keyboard keep working at all times. The script never decides
 anything for you: every button press maps to one click you could have made
-yourself. Forfeit needs two presses of Start within 4 seconds.
+yourself. Forfeit needs two presses of Select within 4 seconds.
 
 ## Install
 
@@ -26,7 +26,7 @@ reports a non-`standard` mapping. `navigator.getGamepads()` returning only
 `null`s means the browser itself isn't seeing the pad (Steam's controller
 support can capture it; Chrome is the most reliable).
 
-## Bindings
+## Bindings (defaults — remappable)
 
 | Control | Action |
 |---|---|
@@ -34,20 +34,28 @@ support can capture it; Chrome is the most reliable).
 | **A** | Confirm / activate the highlighted button |
 | **B** | Back — Showdown's *Back* (previous slot / leave target select), *Cancel* while waiting on the opponent, or leave the party list |
 | **X** | Jump to the party (switch) list (↓ off the bottom of the moves does the same; ↑ from the party goes back) |
-| **Y** | Toggle Terastallize / Mega / Z / Dynamax checkbox |
+| **RB** | Toggle Terastallize / Mega / Z / Dynamax — an `(RB)` hint sits next to the checkbox |
 | **LB** | Skip turn (only while the battle animation is behind) |
-| **RB** | Skip to end (same) |
-| **Start** | Forfeit — press once to arm (the status pill turns red), press again within 4 s to concede; any other button cancels. In a Bo3 this concedes the current game. |
-| **Back/Select** | Turn the whole controller layer on/off |
+| **Y** | Skip to end (same). The playback buttons are also cursor-selectable with A. |
+| **Select** | Forfeit — press once to arm (the status pill turns red), press again within 4 s to concede; any other button cancels. In a Bo3 this concedes the current game. The pill always shows `(Select) forfeit`. |
+| **Start** | Turn the whole controller layer on/off |
 | `Ctrl+Shift+G` | Same toggle, from the keyboard |
+
+**Remapping:** click the 🎮 status pill (bottom-right) → *Rebind* on any row →
+press the controller button you want. Bindings are saved in the browser
+(localStorage) and the on-screen hints follow. *Reset defaults* restores the
+table above.
 
 Team preview, move select, doubles target select, forced switches and the
 "waiting for opponent" state are all covered. Disabled moves and
 active/fainted party slots can be highlighted but never activated.
 
-The cursor is an orange outline. It survives Showdown's turn re-renders by
-identity (it stays on *Protect*, not on "the third button"), remembers the
-last move you used across turns, and never wraps around edges.
+The cursor is a solid orange outline; a thinner orange box marks which group
+(moves / party / targets / playback) you're in, and a black-and-white dashed
+ring means "not selectable" (0 PP, active or fainted Pokémon). The cursor
+survives Showdown's turn re-renders by identity (it stays on *Protect*, not on
+"the third button"), remembers the last move you used across turns, and never
+wraps around edges.
 
 While you have text in the chat box the pad is ignored (the empty, auto-focused
 chat box does not count). Unplug the pad and you're back to mouse only.
@@ -62,7 +70,8 @@ src/cursor.js        NAVIGATION — pure state machine over (pane, index).
 src/showdown-dom.js  ADAPTER — the only file with Showdown selectors.
                      Reads panes, clicks buttons, paints the cursor, watches
                      re-renders.
-src/main.js          wiring + toggle + typing guard + test hook
+src/settings.js      saved bindings + the remap panel (no Showdown knowledge)
+src/main.js          wiring + toggle + typing guard + hints + test hook
 build.js             esbuild → dist/showdown-gamepad.user.js
 test/                vitest (jsdom); fixtures are real client HTML captured
                      by tools/recon.js
@@ -80,7 +89,7 @@ a browser.
 
 ```sh
 npm install
-npm test          # unit tests (60)
+npm test          # unit tests (69)
 npm run build     # dist/showdown-gamepad.user.js
 npm run recon -- --script dist/showdown-gamepad.user.js   # e2e vs a LOCAL server
 ```
@@ -96,7 +105,7 @@ the public server. Its stage snapshots land in `tools/out/`.
 ## Scope / non-goals (v1)
 
 Battle controls only — no teambuilder, ladder or chat navigation. No
-remapping UI (bindings are constants in `src/gamepad.js`). Pads that don't
+remapping of the stick/d-pad axes (buttons remap in-page). Pads that don't
 report `mapping === "standard"` are refused with a console warning rather than
 guessed at. Classic client only; the `/beta` Preact client uses different
 markup.

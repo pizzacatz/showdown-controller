@@ -26,28 +26,46 @@ export const SELECTORS = {
   skipTurn: 'button[name="skipTurn"]',
   goToEnd: 'button[name="goToEnd"]',
   timer: '.timerbutton, .timer',
+  playback: 'button[name="pause"], button[name="play"], button[name="instantReplay"], button[name="rewindTurn"], button[name="skipTurn"], button[name="goToEnd"]',
 };
 
 export const CURSOR_CLASS = 'sgp-cursor';
+export const PANE_CLASS = 'sgp-pane';
+export const HINT_CLASS = 'sgp-hint';
 export const BADGE_ID = 'sgp-status';
 export const STYLE_ID = 'sgp-cursor-style';
 export const CURSOR_CSS = `
+/* Item cursor: solid, opaque, no glow. */
 .${CURSOR_CLASS} {
-  outline: 3px solid #f5a623 !important;
-  outline-offset: -2px !important;
-  box-shadow: 0 0 0 3px rgba(245, 166, 35, 0.45), 0 0 12px rgba(245, 166, 35, 0.8) !important;
+  outline: 3px solid #ff8c00 !important;
+  outline-offset: -3px !important;
+  box-shadow: inset 0 0 0 4px #fff, 0 0 0 1px #000 !important;
   position: relative;
   z-index: 2;
 }
+/* Not selectable: high-contrast dashed white-on-black ring (works on light and dark themes). */
 .${CURSOR_CLASS}:disabled, .${CURSOR_CLASS}.disabled {
-  outline-color: #b0b0b0 !important;
-  box-shadow: 0 0 0 3px rgba(160, 160, 160, 0.4) !important;
+  outline: 4px dashed #fff !important;
+  outline-offset: -4px !important;
+  box-shadow: inset 0 0 0 5px #000, 0 0 0 1px #000 !important;
+}
+/* Box around the pane the cursor is in (moves / party / targets / playback):
+   an overlay sized to the union of the pane's buttons. */
+.${PANE_CLASS} {
+  position: absolute; pointer-events: none; z-index: 1;
+  border: 2px solid #ff8c00; border-radius: 6px; box-sizing: border-box;
+}
+/* Button hints, e.g. "(RB)" next to Terastallize. */
+.${HINT_CLASS} {
+  font: bold 9px/1 Verdana, sans-serif; color: #fff; background: #ff8c00;
+  border-radius: 3px; padding: 1px 4px; margin-left: 4px; vertical-align: middle;
+  pointer-events: none;
 }
 #${BADGE_ID} {
   position: fixed; right: 8px; bottom: 8px; z-index: 9999;
   font: 11px/1.4 Verdana, sans-serif; color: #fff;
   background: rgba(40, 40, 40, 0.85); border-radius: 12px; padding: 3px 10px;
-  pointer-events: none; opacity: 0.9;
+  cursor: pointer; opacity: 0.95; user-select: none;
 }
 #${BADGE_ID}[data-state="on"] { background: rgba(30, 120, 60, 0.9); }
 #${BADGE_ID}[data-state="off"] { background: rgba(120, 40, 40, 0.9); }
@@ -106,6 +124,7 @@ export function createAdapter(options = {}) {
     const skip = !name && (!text || (el.style && el.style.visibility === 'hidden'));
     let id;
     if (kind === 'MOVE') id = `move:${el.dataset.move || text || i}`;
+    else if (kind === 'PLAYBACK') id = `PLAYBACK:${name || text || i}`;
     else if (kind === 'TARGET' || kind === 'SWITCH_TARGET') id = `${kind}:${name || 'x'}:${value ?? i}`;
     else id = `${kind}:${text || (name + ':' + value) || i}`;
     return { id, el, disabled: disabledAttr || disabledClass, skip };
@@ -160,6 +179,9 @@ export function createAdapter(options = {}) {
       const switchMenu = q(SELECTORS.switchMenu)[0];
       if (switchMenu) panes.SWITCH = pane('SWITCH', Array.from(switchMenu.querySelectorAll('button')));
     }
+    // Playback controls can coexist with the above (e.g. after the battle).
+    const playback = q(SELECTORS.playback);
+    if (playback.length) panes.PLAYBACK = pane('PLAYBACK', playback);
     for (const k of Object.keys(panes)) if (!panes[k]) delete panes[k];
 
     const has = sel => q(sel).some(isVisible);
@@ -299,6 +321,7 @@ export function createAdapter(options = {}) {
 
   function clearCursor() {
     doc.querySelectorAll('.' + CURSOR_CLASS).forEach(el => el.classList.remove(CURSOR_CLASS));
+    doc.querySelectorAll('.' + PANE_CLASS).forEach(el => el.remove());
   }
 
   function setCursor(paneName, index) {
@@ -309,7 +332,58 @@ export function createAdapter(options = {}) {
     const item = p && p.items[index];
     if (!item) return false;
     item.el.classList.add(CURSOR_CLASS);
+    // Box the pane: an overlay around the union of the pane's visible
+    // buttons, positioned inside .battle-controls (which is position:absolute
+    // in the client, so it is the offset parent).
+    const controls = item.el.closest(SELECTORS.controls);
+    if (controls) {
+      const rects = p.items.filter(it => !it.skip || it.el.style.visibility === 'hidden').map(it => rectOf(it.el)).filter(r => r && r.width > 0);
+      if (rects.length) {
+        const cr = rectOf(controls);
+        const pad = 4;
+        const left = Math.min(...rects.map(r => r.left)) - cr.left - pad;
+        const top = Math.min(...rects.map(r => r.top)) - cr.top - pad;
+        const right = Math.max(...rects.map(r => r.left + r.width)) - cr.left + pad;
+        const bottom = Math.max(...rects.map(r => r.top + r.height)) - cr.top + pad;
+        const box = doc.createElement('div');
+        box.className = PANE_CLASS;
+        box.style.cssText = `left:${left}px;top:${top}px;width:${right - left}px;height:${bottom - top}px;`;
+        controls.appendChild(box);
+      }
+    }
     return true;
+  }
+
+  /**
+   * Show "(RB)"-style hints next to on-screen controls. `labels` maps
+   * control → button label, e.g. { gimmick: 'RB', skipTurn: 'LB', goToEnd: 'Y' }.
+   * Idempotent: existing hints are updated in place, so re-painting after a
+   * re-render doesn't churn the DOM.
+   */
+  function paintHints(labels) {
+    ensureStyle();
+    const controls = getControls();
+    if (!controls) return;
+    const targets = [];
+    const gim = Array.from(controls.querySelectorAll(SELECTORS.gimmick)).find(el => isVisible(el) || isVisible(el.parentElement));
+    if (gim && labels.gimmick) targets.push([gim.closest('label') || gim.parentElement, labels.gimmick]);
+    for (const [key, sel] of [['skipTurn', SELECTORS.skipTurn], ['goToEnd', SELECTORS.goToEnd]]) {
+      if (!labels[key]) continue;
+      controls.querySelectorAll(sel).forEach(el => { if (isVisible(el) && !el.disabled) targets.push([el, labels[key]]); });
+    }
+    const wanted = new Set();
+    for (const [host, label] of targets) {
+      let hint = host.querySelector(':scope > .' + HINT_CLASS);
+      if (!hint) { hint = doc.createElement('span'); hint.className = HINT_CLASS; host.appendChild(hint); }
+      const text = `(${label})`;
+      if (hint.textContent !== text) hint.textContent = text;
+      wanted.add(hint);
+    }
+    controls.querySelectorAll('.' + HINT_CLASS).forEach(h => { if (!wanted.has(h)) h.remove(); });
+  }
+
+  function clearHints() {
+    doc.querySelectorAll('.' + HINT_CLASS).forEach(h => h.remove());
   }
 
   // ---- change notification ---------------------------------------------
@@ -329,12 +403,16 @@ export function createAdapter(options = {}) {
     };
     // Ignore class mutations that only add/remove our own cursor class,
     // otherwise painting the cursor would re-trigger the observer forever.
-    const strip = s => (s || '').split(/\s+/).filter(c => c && c !== CURSOR_CLASS).sort().join(' ');
+    const OURS = new Set([CURSOR_CLASS, PANE_CLASS]);
+    const strip = s => (s || '').split(/\s+/).filter(c => c && !OURS.has(c)).sort().join(' ');
+    const isHint = n => n && n.nodeType === 1 && (n.classList.contains(HINT_CLASS) || n.classList.contains(PANE_CLASS));
     const observer = new win.MutationObserver(records => {
       for (const rec of records) {
         const t = rec.target;
         if (!t || !t.closest) { fire(); return; }
         if (rec.type === 'attributes' && rec.attributeName === 'class' && strip(rec.oldValue) === strip(t.className)) continue;
+        if (rec.type === 'childList' && [...rec.addedNodes, ...rec.removedNodes].every(isHint)) continue;
+        if (rec.type === 'characterData' && isHint(t.parentNode)) continue;
         if (t.closest(SELECTORS.controls)) { fire(); return; }
         if (rec.type === 'attributes' && t.matches && t.matches('.ps-room')) { fire(); return; }
         if (rec.type === 'childList' && (t === doc.body || t.matches?.('.ps-room, .battle-controls'))) { fire(); return; }
@@ -348,6 +426,6 @@ export function createAdapter(options = {}) {
 
   return {
     readScreen, activate, back, cancel, gimmick, selectSwitch, selectMove, skipTurn, goToEnd, forfeit,
-    setCursor, clearCursor, setStatus, onControlsChanged, isTyping, getRoom, getControls,
+    setCursor, clearCursor, paintHints, clearHints, setStatus, onControlsChanged, isTyping, getRoom, getControls,
   };
 }

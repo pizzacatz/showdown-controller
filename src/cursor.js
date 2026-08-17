@@ -9,6 +9,7 @@
 //       SWITCH?:        { items, columns },
 //       SWITCH_TARGET?: { items, columns },
 //       TEAM?:          { items, columns },
+//       PLAYBACK?:      { items, columns },
 //     },
 //     controls: { back, cancel, gimmick, selectSwitch, selectMove }  // booleans
 //   }
@@ -28,7 +29,9 @@
 //         | { type: 'selectSwitch' } | { type: 'selectMove' }
 //         | { type: 'skipTurn' } | { type: 'goToEnd' }   (playback controls)
 
-export const PANE_PRIORITY = ['TARGET', 'SWITCH_TARGET', 'TEAM', 'MOVE', 'SWITCH'];
+// PLAYBACK = pause / first turn / prev turn / skip turn / skip to end buttons
+// (shown while the battle animation lags the log, and after the battle).
+export const PANE_PRIORITY = ['TARGET', 'SWITCH_TARGET', 'TEAM', 'MOVE', 'SWITCH', 'PLAYBACK'];
 
 export function initialState() {
   return { pane: 'INACTIVE', index: 0, focusId: null, screenKey: null, memory: {} };

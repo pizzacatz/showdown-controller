@@ -339,6 +339,13 @@ any other button disarms; sends `/forfeit` via the client room API), LB = Skip
 turn, RB = Skip to end (playback buttons, only when present), ↓/↑ cross between
 the move row and the party row. All verified live via `tools/recon.js`.
 
+v0.3.0 (2026-08-17): defaults changed to RB = gimmick, Y = skip to end,
+Select = forfeit, Start = layer toggle; in-page remapping (click the pill,
+localStorage); `(RB)`/`(LB)`/`(Y)` hints painted on the controls and a
+permanent `(Select) forfeit` hint in the pill; playback buttons are a
+cursor-selectable `PLAYBACK` pane; solid opaque cursor, overlay box around the
+current pane, high-contrast dashed ring for not-selectable items.
+
 Validation list (§9): every item except the physical-pad ones (first-press
 detection, unplug, analog diagonals on real hardware, coexistence with the
 replay-capture script) is exercised by `tools/recon.js --script` against the

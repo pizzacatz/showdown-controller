@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Showdown Gamepad
 // @namespace    https://github.com/pizzacatz/showdown-controller
-// @version      0.2.0
+// @version      0.3.0
 // @description  Play Pokémon Showdown battles with an XInput controller: D-pad/stick cursor, A confirm, B back, X switch menu, Y tera/gimmick. Mouse and keyboard keep working.
 // @author       pizzacatz
 // @license      MIT
@@ -33,20 +33,36 @@
     LEFT: 14,
     RIGHT: 15
   };
-  var BINDINGS = {
+  var BUTTON_LABELS = ["A", "B", "X", "Y", "LB", "RB", "LT", "RT", "Select", "Start", "L3", "R3", "Up", "Down", "Left", "Right"];
+  var buttonLabel = (i) => BUTTON_LABELS[i] ?? `B${i}`;
+  var DEFAULT_BINDINGS = {
     [BUTTON.A]: "CONFIRM",
     [BUTTON.B]: "BACK",
     [BUTTON.X]: "SWITCH_MENU",
-    [BUTTON.Y]: "GIMMICK",
+    [BUTTON.RB]: "GIMMICK",
     [BUTTON.LB]: "SKIP_TURN",
-    [BUTTON.RB]: "SKIP_TO_END",
-    [BUTTON.START]: "FORFEIT",
-    [BUTTON.BACK]: "TOGGLE_LAYER",
+    [BUTTON.Y]: "SKIP_TO_END",
+    [BUTTON.BACK]: "FORFEIT",
+    [BUTTON.START]: "TOGGLE_LAYER",
     [BUTTON.UP]: "UP",
     [BUTTON.DOWN]: "DOWN",
     [BUTTON.LEFT]: "LEFT",
     [BUTTON.RIGHT]: "RIGHT"
   };
+  var INTENTS = [
+    { id: "CONFIRM", label: "Confirm / select" },
+    { id: "BACK", label: "Back / cancel" },
+    { id: "SWITCH_MENU", label: "Jump to party list" },
+    { id: "GIMMICK", label: "Toggle Tera / gimmick" },
+    { id: "SKIP_TURN", label: "Skip turn" },
+    { id: "SKIP_TO_END", label: "Skip to end" },
+    { id: "FORFEIT", label: "Forfeit (press twice)" },
+    { id: "TOGGLE_LAYER", label: "Controller layer on/off" },
+    { id: "UP", label: "Cursor up" },
+    { id: "DOWN", label: "Cursor down" },
+    { id: "LEFT", label: "Cursor left" },
+    { id: "RIGHT", label: "Cursor right" }
+  ];
   var DIRECTIONS = /* @__PURE__ */ new Set(["UP", "DOWN", "LEFT", "RIGHT"]);
   var DEFAULTS = {
     deadzone: 0.5,
@@ -56,11 +72,11 @@
     repeatInterval: 120
     // ms between subsequent repeats
   };
-  function readIntents(pad, deadzone = DEFAULTS.deadzone) {
+  function readIntents(pad, deadzone = DEFAULTS.deadzone, bindings = DEFAULT_BINDINGS) {
     const active = /* @__PURE__ */ new Set();
     if (!pad) return active;
     const buttons = pad.buttons || [];
-    for (const [index, intent] of Object.entries(BINDINGS)) {
+    for (const [index, intent] of Object.entries(bindings)) {
       const b = buttons[index];
       if (b && (b.pressed || b.value > 0.5)) active.add(intent);
     }
@@ -98,8 +114,11 @@
       now = () => performance.now(),
       onEvent = () => {
       },
+      onRawButton = () => {
+      },
       onStatus = () => {
       },
+      bindings = DEFAULT_BINDINGS,
       deadzone = DEFAULTS.deadzone,
       repeatDelay = DEFAULTS.repeatDelay,
       repeatInterval = DEFAULTS.repeatInterval
@@ -107,6 +126,7 @@
     let running = false;
     let frameId = null;
     let prev = /* @__PURE__ */ new Set();
+    let prevRaw = [];
     const heldSince = /* @__PURE__ */ new Map();
     const nextRepeat = /* @__PURE__ */ new Map();
     const seenNonStandard = /* @__PURE__ */ new Set();
@@ -128,6 +148,7 @@
           currentPadIndex = null;
         }
         prev = /* @__PURE__ */ new Set();
+        prevRaw = [];
         heldSince.clear();
         nextRepeat.clear();
         return false;
@@ -139,7 +160,10 @@
         heldSince.clear();
         nextRepeat.clear();
       }
-      const active = readIntents(pad, deadzone);
+      const rawNow = (pad.buttons || []).map((b) => !!(b && (b.pressed || b.value > 0.5)));
+      for (let i = 0; i < rawNow.length; i++) if (rawNow[i] && !prevRaw[i]) onRawButton(i, pad.index);
+      prevRaw = rawNow;
+      const active = readIntents(pad, deadzone, typeof bindings === "function" ? bindings() : bindings);
       for (const intent of active) {
         if (!prev.has(intent)) {
           emit(intent, false, pad.index);
@@ -198,7 +222,7 @@
   }
 
   // src/cursor.js
-  var PANE_PRIORITY = ["TARGET", "SWITCH_TARGET", "TEAM", "MOVE", "SWITCH"];
+  var PANE_PRIORITY = ["TARGET", "SWITCH_TARGET", "TEAM", "MOVE", "SWITCH", "PLAYBACK"];
   function initialState() {
     return { pane: "INACTIVE", index: 0, focusId: null, screenKey: null, memory: {} };
   }
@@ -385,28 +409,46 @@
     selectMove: 'button[name="selectMove"]',
     skipTurn: 'button[name="skipTurn"]',
     goToEnd: 'button[name="goToEnd"]',
-    timer: ".timerbutton, .timer"
+    timer: ".timerbutton, .timer",
+    playback: 'button[name="pause"], button[name="play"], button[name="instantReplay"], button[name="rewindTurn"], button[name="skipTurn"], button[name="goToEnd"]'
   };
   var CURSOR_CLASS = "sgp-cursor";
+  var PANE_CLASS = "sgp-pane";
+  var HINT_CLASS = "sgp-hint";
   var BADGE_ID = "sgp-status";
   var STYLE_ID = "sgp-cursor-style";
   var CURSOR_CSS = `
+/* Item cursor: solid, opaque, no glow. */
 .${CURSOR_CLASS} {
-  outline: 3px solid #f5a623 !important;
-  outline-offset: -2px !important;
-  box-shadow: 0 0 0 3px rgba(245, 166, 35, 0.45), 0 0 12px rgba(245, 166, 35, 0.8) !important;
+  outline: 3px solid #ff8c00 !important;
+  outline-offset: -3px !important;
+  box-shadow: inset 0 0 0 4px #fff, 0 0 0 1px #000 !important;
   position: relative;
   z-index: 2;
 }
+/* Not selectable: high-contrast dashed white-on-black ring (works on light and dark themes). */
 .${CURSOR_CLASS}:disabled, .${CURSOR_CLASS}.disabled {
-  outline-color: #b0b0b0 !important;
-  box-shadow: 0 0 0 3px rgba(160, 160, 160, 0.4) !important;
+  outline: 4px dashed #fff !important;
+  outline-offset: -4px !important;
+  box-shadow: inset 0 0 0 5px #000, 0 0 0 1px #000 !important;
+}
+/* Box around the pane the cursor is in (moves / party / targets / playback):
+   an overlay sized to the union of the pane's buttons. */
+.${PANE_CLASS} {
+  position: absolute; pointer-events: none; z-index: 1;
+  border: 2px solid #ff8c00; border-radius: 6px; box-sizing: border-box;
+}
+/* Button hints, e.g. "(RB)" next to Terastallize. */
+.${HINT_CLASS} {
+  font: bold 9px/1 Verdana, sans-serif; color: #fff; background: #ff8c00;
+  border-radius: 3px; padding: 1px 4px; margin-left: 4px; vertical-align: middle;
+  pointer-events: none;
 }
 #${BADGE_ID} {
   position: fixed; right: 8px; bottom: 8px; z-index: 9999;
   font: 11px/1.4 Verdana, sans-serif; color: #fff;
   background: rgba(40, 40, 40, 0.85); border-radius: 12px; padding: 3px 10px;
-  pointer-events: none; opacity: 0.9;
+  cursor: pointer; opacity: 0.95; user-select: none;
 }
 #${BADGE_ID}[data-state="on"] { background: rgba(30, 120, 60, 0.9); }
 #${BADGE_ID}[data-state="off"] { background: rgba(120, 40, 40, 0.9); }
@@ -446,6 +488,7 @@
       const skip = !name && (!text || el.style && el.style.visibility === "hidden");
       let id;
       if (kind === "MOVE") id = `move:${el.dataset.move || text || i}`;
+      else if (kind === "PLAYBACK") id = `PLAYBACK:${name || text || i}`;
       else if (kind === "TARGET" || kind === "SWITCH_TARGET") id = `${kind}:${name || "x"}:${value ?? i}`;
       else id = `${kind}:${text || name + ":" + value || i}`;
       return { id, el, disabled: disabledAttr || disabledClass, skip };
@@ -495,6 +538,8 @@
         const switchMenu = q(SELECTORS.switchMenu)[0];
         if (switchMenu) panes.SWITCH = pane("SWITCH", Array.from(switchMenu.querySelectorAll("button")));
       }
+      const playback = q(SELECTORS.playback);
+      if (playback.length) panes.PLAYBACK = pane("PLAYBACK", playback);
       for (const k of Object.keys(panes)) if (!panes[k]) delete panes[k];
       const has = (sel) => q(sel).some(isVisible);
       const ctl = {
@@ -607,6 +652,7 @@
     }
     function clearCursor() {
       doc.querySelectorAll("." + CURSOR_CLASS).forEach((el) => el.classList.remove(CURSOR_CLASS));
+      doc.querySelectorAll("." + PANE_CLASS).forEach((el) => el.remove());
     }
     function setCursor(paneName, index) {
       ensureStyle();
@@ -616,7 +662,55 @@
       const item = p && p.items[index];
       if (!item) return false;
       item.el.classList.add(CURSOR_CLASS);
+      const controls = item.el.closest(SELECTORS.controls);
+      if (controls) {
+        const rects = p.items.filter((it) => !it.skip || it.el.style.visibility === "hidden").map((it) => rectOf(it.el)).filter((r) => r && r.width > 0);
+        if (rects.length) {
+          const cr = rectOf(controls);
+          const pad = 4;
+          const left = Math.min(...rects.map((r) => r.left)) - cr.left - pad;
+          const top = Math.min(...rects.map((r) => r.top)) - cr.top - pad;
+          const right = Math.max(...rects.map((r) => r.left + r.width)) - cr.left + pad;
+          const bottom = Math.max(...rects.map((r) => r.top + r.height)) - cr.top + pad;
+          const box = doc.createElement("div");
+          box.className = PANE_CLASS;
+          box.style.cssText = `left:${left}px;top:${top}px;width:${right - left}px;height:${bottom - top}px;`;
+          controls.appendChild(box);
+        }
+      }
       return true;
+    }
+    function paintHints(labels) {
+      ensureStyle();
+      const controls = getControls();
+      if (!controls) return;
+      const targets = [];
+      const gim = Array.from(controls.querySelectorAll(SELECTORS.gimmick)).find((el) => isVisible(el) || isVisible(el.parentElement));
+      if (gim && labels.gimmick) targets.push([gim.closest("label") || gim.parentElement, labels.gimmick]);
+      for (const [key, sel] of [["skipTurn", SELECTORS.skipTurn], ["goToEnd", SELECTORS.goToEnd]]) {
+        if (!labels[key]) continue;
+        controls.querySelectorAll(sel).forEach((el) => {
+          if (isVisible(el) && !el.disabled) targets.push([el, labels[key]]);
+        });
+      }
+      const wanted = /* @__PURE__ */ new Set();
+      for (const [host, label] of targets) {
+        let hint = host.querySelector(":scope > ." + HINT_CLASS);
+        if (!hint) {
+          hint = doc.createElement("span");
+          hint.className = HINT_CLASS;
+          host.appendChild(hint);
+        }
+        const text = `(${label})`;
+        if (hint.textContent !== text) hint.textContent = text;
+        wanted.add(hint);
+      }
+      controls.querySelectorAll("." + HINT_CLASS).forEach((h) => {
+        if (!wanted.has(h)) h.remove();
+      });
+    }
+    function clearHints() {
+      doc.querySelectorAll("." + HINT_CLASS).forEach((h) => h.remove());
     }
     function onControlsChanged(cb) {
       let scheduled = false;
@@ -629,7 +723,9 @@
           cb();
         });
       };
-      const strip = (s) => (s || "").split(/\s+/).filter((c) => c && c !== CURSOR_CLASS).sort().join(" ");
+      const OURS = /* @__PURE__ */ new Set([CURSOR_CLASS, PANE_CLASS]);
+      const strip = (s) => (s || "").split(/\s+/).filter((c) => c && !OURS.has(c)).sort().join(" ");
+      const isHint = (n) => n && n.nodeType === 1 && (n.classList.contains(HINT_CLASS) || n.classList.contains(PANE_CLASS));
       const observer = new win.MutationObserver((records) => {
         for (const rec of records) {
           const t = rec.target;
@@ -638,6 +734,8 @@
             return;
           }
           if (rec.type === "attributes" && rec.attributeName === "class" && strip(rec.oldValue) === strip(t.className)) continue;
+          if (rec.type === "childList" && [...rec.addedNodes, ...rec.removedNodes].every(isHint)) continue;
+          if (rec.type === "characterData" && isHint(t.parentNode)) continue;
           if (t.closest(SELECTORS.controls)) {
             fire();
             return;
@@ -674,11 +772,157 @@
       forfeit,
       setCursor,
       clearCursor,
+      paintHints,
+      clearHints,
       setStatus,
       onControlsChanged,
       isTyping,
       getRoom,
       getControls
+    };
+  }
+
+  // src/settings.js
+  var STORAGE_KEY = "showdown-gamepad.bindings.v1";
+  var PANEL_ID = "sgp-settings";
+  function intentToButton(bindings) {
+    const out = {};
+    for (const [btn, intent] of Object.entries(bindings)) out[intent] = Number(btn);
+    return out;
+  }
+  function loadBindings(storage) {
+    try {
+      const raw = storage && storage.getItem(STORAGE_KEY);
+      if (!raw) return { ...DEFAULT_BINDINGS };
+      const parsed = JSON.parse(raw);
+      const known = new Set(INTENTS.map((i) => i.id));
+      const out = {};
+      for (const [btn, intent] of Object.entries(parsed)) {
+        if (Number.isInteger(Number(btn)) && known.has(intent)) out[Number(btn)] = intent;
+      }
+      return Object.keys(out).length ? out : { ...DEFAULT_BINDINGS };
+    } catch (_) {
+      return { ...DEFAULT_BINDINGS };
+    }
+  }
+  function saveBindings(storage, bindings) {
+    try {
+      storage && storage.setItem(STORAGE_KEY, JSON.stringify(bindings));
+    } catch (_) {
+    }
+  }
+  function rebind(bindings, intent, button) {
+    const out = {};
+    for (const [b, i] of Object.entries(bindings)) {
+      if (i === intent) continue;
+      if (Number(b) === button) continue;
+      out[Number(b)] = i;
+    }
+    out[button] = intent;
+    return out;
+  }
+  var PANEL_CSS = `
+#${PANEL_ID} {
+  position: fixed; right: 8px; bottom: 34px; z-index: 10000; width: 300px;
+  font: 12px/1.4 Verdana, sans-serif; color: #eee; background: #222; border: 1px solid #555;
+  border-radius: 8px; padding: 10px 12px; box-shadow: 0 4px 16px rgba(0,0,0,.5);
+}
+#${PANEL_ID} h3 { margin: 0 0 8px; font-size: 13px; color: #fff; }
+#${PANEL_ID} table { width: 100%; border-collapse: collapse; }
+#${PANEL_ID} td { padding: 3px 2px; vertical-align: middle; }
+#${PANEL_ID} td.k { width: 46px; text-align: center; font-weight: bold; color: #ff8c00; }
+#${PANEL_ID} button { font: 11px Verdana, sans-serif; padding: 2px 8px; border-radius: 4px; border: 1px solid #777; background: #333; color: #eee; cursor: pointer; }
+#${PANEL_ID} button:hover { background: #444; }
+#${PANEL_ID} tr.listening td.k { color: #fff; background: #b35a00; border-radius: 4px; }
+#${PANEL_ID} .foot { margin-top: 8px; display: flex; gap: 6px; justify-content: space-between; }
+#${PANEL_ID} .note { color: #aaa; font-size: 11px; margin-top: 6px; }
+`;
+  function createSettings({ doc = document, storage = typeof localStorage !== "undefined" ? localStorage : null, onChange = () => {
+  } } = {}) {
+    let bindings = loadBindings(storage);
+    let panel = null;
+    let listeningFor = null;
+    const labelFor = (intent) => {
+      const b = intentToButton(bindings)[intent];
+      return b === void 0 ? "\u2014" : buttonLabel(b);
+    };
+    function ensureStyle() {
+      if (doc.getElementById(PANEL_ID + "-style")) return;
+      const st = doc.createElement("style");
+      st.id = PANEL_ID + "-style";
+      st.textContent = PANEL_CSS;
+      (doc.head || doc.documentElement).appendChild(st);
+    }
+    function render() {
+      if (!panel) return;
+      const rows = INTENTS.map(({ id, label }) => `
+      <tr data-intent="${id}" class="${listeningFor === id ? "listening" : ""}">
+        <td>${label}</td>
+        <td class="k">${listeningFor === id ? "press\u2026" : labelFor(id)}</td>
+        <td style="text-align:right"><button type="button" data-rebind="${id}">${listeningFor === id ? "Cancel" : "Rebind"}</button></td>
+      </tr>`).join("");
+      panel.innerHTML = `
+      <h3>\u{1F3AE} Gamepad bindings</h3>
+      <table>${rows}</table>
+      <div class="foot">
+        <button type="button" data-reset>Reset defaults</button>
+        <button type="button" data-close>Close</button>
+      </div>
+      <div class="note">Click Rebind, then press a controller button. Bindings are saved in this browser. Buttons: ${BUTTON_LABELS.join(" ")}.</div>`;
+    }
+    function open() {
+      ensureStyle();
+      if (!panel) {
+        panel = doc.createElement("div");
+        panel.id = PANEL_ID;
+        panel.addEventListener("click", (e) => {
+          const t = e.target.closest("button");
+          if (!t) return;
+          if (t.dataset.rebind) {
+            listeningFor = listeningFor === t.dataset.rebind ? null : t.dataset.rebind;
+            render();
+          } else if (t.hasAttribute("data-reset")) {
+            bindings = { ...DEFAULT_BINDINGS };
+            saveBindings(storage, bindings);
+            listeningFor = null;
+            render();
+            onChange(bindings);
+          } else if (t.hasAttribute("data-close")) {
+            close();
+          }
+        });
+        (doc.body || doc.documentElement).appendChild(panel);
+      }
+      render();
+    }
+    function close() {
+      listeningFor = null;
+      if (panel) {
+        panel.remove();
+        panel = null;
+      }
+    }
+    return {
+      get bindings() {
+        return bindings;
+      },
+      labelFor,
+      open,
+      close,
+      toggle() {
+        panel ? close() : open();
+      },
+      isOpen: () => !!panel,
+      isCapturing: () => !!listeningFor,
+      onRawButton(index) {
+        if (!listeningFor) return false;
+        bindings = rebind(bindings, listeningFor, index);
+        saveBindings(storage, bindings);
+        listeningFor = null;
+        render();
+        onChange(bindings);
+        return true;
+      }
     };
   }
 
@@ -688,6 +932,8 @@
     enabledByDefault: true,
     toggleKey: { key: "G", ctrlKey: true, shiftKey: true },
     // Ctrl+Shift+G — free in the classic client
+    // Button bindings live in src/gamepad.js (DEFAULT_BINDINGS) and can be
+    // remapped in-page: click the 🎮 status pill → Rebind. Stored in localStorage.
     deadzone: DEFAULTS.deadzone,
     repeatDelay: DEFAULTS.repeatDelay,
     repeatInterval: DEFAULTS.repeatInterval,
@@ -702,24 +948,38 @@
   function start(win = window) {
     const doc = win.document;
     const adapter = createAdapter({ doc, win });
+    const settings = createSettings({ doc, storage: safeStorage(win), onChange: () => {
+      log("bindings updated");
+      paint();
+    } });
     let state = initialState();
     let enabled2 = CONFIG.enabledByDefault;
     let padSeen = false;
     let forfeitArmedAt = 0;
     let forfeitTimer = null;
+    const L = (intent) => settings.labelFor(intent);
+    const forfeitHint = () => `(${L("FORFEIT")}) forfeit`;
     function status() {
       if (forfeitArmedAt) {
-        adapter.setStatus("off", "\u{1F3AE} FORFEIT armed \u2014 press Start again to concede, anything else to cancel");
+        adapter.setStatus("off", `\u{1F3AE} FORFEIT armed \u2014 press ${L("FORFEIT")} again to concede, anything else to cancel`);
         return;
       }
-      if (!padSeen) adapter.setStatus("waiting", "\u{1F3AE} Gamepad: press any button on the controller");
-      else if (!enabled2) adapter.setStatus("off", "\u{1F3AE} Gamepad OFF \u2014 Back/Select or Ctrl+Shift+G to enable");
-      else if (state.pane === "WAIT") adapter.setStatus("on", "\u{1F3AE} Gamepad ON \u2014 waiting for opponent (B = cancel)");
-      else if (state.pane === "INACTIVE") adapter.setStatus("on", "\u{1F3AE} Gamepad ON \u2014 no battle controls on screen");
-      else adapter.setStatus("on", `\u{1F3AE} Gamepad ON \u2014 ${state.pane.toLowerCase().replace("_", " ")}`);
+      if (!padSeen) adapter.setStatus("waiting", "\u{1F3AE} Gamepad: press any button on the controller \xB7 click here for bindings");
+      else if (!enabled2) adapter.setStatus("off", `\u{1F3AE} Gamepad OFF \u2014 ${L("TOGGLE_LAYER")} or Ctrl+Shift+G to enable`);
+      else if (state.pane === "WAIT") adapter.setStatus("on", `\u{1F3AE} Gamepad ON \u2014 waiting for opponent (${L("BACK")} = cancel) \xB7 ${forfeitHint()}`);
+      else if (state.pane === "INACTIVE") adapter.setStatus("on", `\u{1F3AE} Gamepad ON \u2014 no battle controls on screen \xB7 ${forfeitHint()}`);
+      else adapter.setStatus("on", `\u{1F3AE} Gamepad ON \u2014 ${state.pane.toLowerCase().replace("_", " ")} \xB7 ${forfeitHint()}`);
+    }
+    function hints() {
+      if (!enabled2 || !padSeen) {
+        adapter.clearHints();
+        return;
+      }
+      adapter.paintHints({ gimmick: L("GIMMICK"), skipTurn: L("SKIP_TURN"), goToEnd: L("SKIP_TO_END") });
     }
     function paint() {
       status();
+      hints();
       if (!enabled2 || !padSeen) {
         adapter.clearCursor();
         return;
@@ -801,10 +1061,11 @@
         disarmForfeit();
         paint();
       }, CONFIG.forfeitConfirmMs);
-      log(`forfeit armed \u2014 press Start again within ${CONFIG.forfeitConfirmMs / 1e3}s to concede`);
+      log(`forfeit armed \u2014 press ${L("FORFEIT")} again within ${CONFIG.forfeitConfirmMs / 1e3}s to concede`);
       paint();
     }
     function handleIntent(type) {
+      if (settings.isCapturing()) return;
       if (type === "TOGGLE_LAYER") {
         disarmForfeit();
         setEnabled(!enabled2);
@@ -830,6 +1091,10 @@
       perform(action);
     }
     const input = createGamepadInput({
+      bindings: () => settings.bindings,
+      onRawButton: (idx) => {
+        if (settings.onRawButton(idx)) dbg("rebound via raw button", idx);
+      },
       deadzone: CONFIG.deadzone,
       repeatDelay: CONFIG.repeatDelay,
       repeatInterval: CONFIG.repeatInterval,
@@ -873,7 +1138,10 @@
         setEnabled(!enabled2);
       }
     }, true);
-    log("loaded \u2014 press any controller button to activate. Ctrl+Shift+G or Back/Select toggles the layer.");
+    doc.addEventListener("click", (e) => {
+      if (e.target && e.target.closest && e.target.closest("#" + BADGE_ID)) settings.toggle();
+    }, true);
+    log(`loaded \u2014 press any controller button to activate. ${L("TOGGLE_LAYER")} or Ctrl+Shift+G toggles the layer; click the \u{1F3AE} pill to remap buttons.`);
     status();
     win.__showdownGamepad = {
       inject(intent) {
@@ -901,11 +1169,19 @@
         };
       },
       resync,
+      settings,
       get state() {
         return state;
       },
       input
     };
+  }
+  function safeStorage(win) {
+    try {
+      return win.localStorage;
+    } catch (_) {
+      return null;
+    }
   }
   if (typeof window !== "undefined" && !window.__showdownGamepadNoAutostart) {
     const boot = () => {

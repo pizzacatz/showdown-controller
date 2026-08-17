@@ -8,22 +8,42 @@ export const BUTTON = {
   UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15,
 };
 
-// Standard-mapping button index → intent.
-// FORFEIT (Start) is arm-then-confirm in main.js — a single press never forfeits.
-export const BINDINGS = {
+export const BUTTON_LABELS = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'Select', 'Start', 'L3', 'R3', 'Up', 'Down', 'Left', 'Right'];
+export const buttonLabel = i => BUTTON_LABELS[i] ?? `B${i}`;
+
+// Standard-mapping button index → intent. Users can remap (see settings.js);
+// these are the defaults. FORFEIT is arm-then-confirm in main.js — a single
+// press never forfeits.
+export const DEFAULT_BINDINGS = {
   [BUTTON.A]: 'CONFIRM',
   [BUTTON.B]: 'BACK',
   [BUTTON.X]: 'SWITCH_MENU',
-  [BUTTON.Y]: 'GIMMICK',
+  [BUTTON.RB]: 'GIMMICK',
   [BUTTON.LB]: 'SKIP_TURN',
-  [BUTTON.RB]: 'SKIP_TO_END',
-  [BUTTON.START]: 'FORFEIT',
-  [BUTTON.BACK]: 'TOGGLE_LAYER',
+  [BUTTON.Y]: 'SKIP_TO_END',
+  [BUTTON.BACK]: 'FORFEIT',
+  [BUTTON.START]: 'TOGGLE_LAYER',
   [BUTTON.UP]: 'UP',
   [BUTTON.DOWN]: 'DOWN',
   [BUTTON.LEFT]: 'LEFT',
   [BUTTON.RIGHT]: 'RIGHT',
 };
+export const BINDINGS = DEFAULT_BINDINGS;
+
+export const INTENTS = [
+  { id: 'CONFIRM', label: 'Confirm / select' },
+  { id: 'BACK', label: 'Back / cancel' },
+  { id: 'SWITCH_MENU', label: 'Jump to party list' },
+  { id: 'GIMMICK', label: 'Toggle Tera / gimmick' },
+  { id: 'SKIP_TURN', label: 'Skip turn' },
+  { id: 'SKIP_TO_END', label: 'Skip to end' },
+  { id: 'FORFEIT', label: 'Forfeit (press twice)' },
+  { id: 'TOGGLE_LAYER', label: 'Controller layer on/off' },
+  { id: 'UP', label: 'Cursor up' },
+  { id: 'DOWN', label: 'Cursor down' },
+  { id: 'LEFT', label: 'Cursor left' },
+  { id: 'RIGHT', label: 'Cursor right' },
+];
 
 export const DIRECTIONS = new Set(['UP', 'DOWN', 'LEFT', 'RIGHT']);
 
@@ -37,11 +57,11 @@ export const DEFAULTS = {
  * Compute the set of intents currently "pressed" on a pad.
  * Directions from the stick are mutually exclusive (dominant axis wins).
  */
-export function readIntents(pad, deadzone = DEFAULTS.deadzone) {
+export function readIntents(pad, deadzone = DEFAULTS.deadzone, bindings = DEFAULT_BINDINGS) {
   const active = new Set();
   if (!pad) return active;
   const buttons = pad.buttons || [];
-  for (const [index, intent] of Object.entries(BINDINGS)) {
+  for (const [index, intent] of Object.entries(bindings)) {
     const b = buttons[index];
     if (b && (b.pressed || b.value > 0.5)) active.add(intent);
   }
@@ -83,7 +103,9 @@ export function selectPad(pads, seenNonStandard, onStatus) {
  *  requestFrame(cb) / cancelFrame(id): scheduling (defaults to rAF)
  *  now(): ms clock (defaults to performance.now)
  *  onEvent({ type, repeat, padIndex }): intent callback
+ *  onRawButton(index): any button rising edge, before bindings (for remapping UI)
  *  onStatus({ type, ... }): 'connected' | 'disconnected' | 'nonstandard'
+ *  bindings: object or () => object (button index → intent), default DEFAULT_BINDINGS
  */
 export function createGamepadInput(options = {}) {
   const {
@@ -92,7 +114,9 @@ export function createGamepadInput(options = {}) {
     cancelFrame = id => cancelAnimationFrame(id),
     now = () => performance.now(),
     onEvent = () => {},
+    onRawButton = () => {},
     onStatus = () => {},
+    bindings = DEFAULT_BINDINGS,
     deadzone = DEFAULTS.deadzone,
     repeatDelay = DEFAULTS.repeatDelay,
     repeatInterval = DEFAULTS.repeatInterval,
@@ -101,6 +125,7 @@ export function createGamepadInput(options = {}) {
   let running = false;
   let frameId = null;
   let prev = new Set();                // intents pressed last frame
+  let prevRaw = [];                     // raw pressed booleans last frame
   const heldSince = new Map();          // direction → timestamp of press
   const nextRepeat = new Map();         // direction → timestamp of next repeat
   const seenNonStandard = new Set();
@@ -122,7 +147,7 @@ export function createGamepadInput(options = {}) {
         currentPadIndex = null;
       }
       // Release everything so a re-plugged pad doesn't inherit held state.
-      prev = new Set(); heldSince.clear(); nextRepeat.clear();
+      prev = new Set(); prevRaw = []; heldSince.clear(); nextRepeat.clear();
       return false;
     }
     if (currentPadIndex !== pad.index) {
@@ -131,7 +156,12 @@ export function createGamepadInput(options = {}) {
       prev = new Set(); heldSince.clear(); nextRepeat.clear();
     }
 
-    const active = readIntents(pad, deadzone);
+    // Raw rising edges (any button) — used by the remap UI.
+    const rawNow = (pad.buttons || []).map(b => !!(b && (b.pressed || b.value > 0.5)));
+    for (let i = 0; i < rawNow.length; i++) if (rawNow[i] && !prevRaw[i]) onRawButton(i, pad.index);
+    prevRaw = rawNow;
+
+    const active = readIntents(pad, deadzone, typeof bindings === 'function' ? bindings() : bindings);
 
     // Rising edges
     for (const intent of active) {

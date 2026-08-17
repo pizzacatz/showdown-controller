@@ -30,8 +30,9 @@ function harness(opts = {}) {
 
 describe('readIntents', () => {
   it('maps standard buttons to intents', () => {
-    const s = readIntents(fakePad({ pressed: [BUTTON.A, BUTTON.UP, BUTTON.BACK] }));
+    const s = readIntents(fakePad({ pressed: [BUTTON.A, BUTTON.UP, BUTTON.START] }));
     expect([...s].sort()).toEqual(['CONFIRM', 'TOGGLE_LAYER', 'UP']);
+    expect([...readIntents(fakePad({ pressed: [BUTTON.BACK] }))]).toEqual(['FORFEIT']);
   });
   it('applies the stick deadzone', () => {
     expect([...readIntents(fakePad({ axes: [0.3, 0] }))]).toEqual([]);
@@ -43,9 +44,13 @@ describe('readIntents', () => {
     expect([...readIntents(fakePad({ axes: [-0.9, 0.7] }))]).toEqual(['LEFT']);
     expect([...readIntents(fakePad({ axes: [0.8, -0.8] }))]).toEqual(['RIGHT']); // tie → x wins
   });
-  it('binds shoulder buttons and Start; leaves triggers and sticks-click unbound', () => {
-    expect([...readIntents(fakePad({ pressed: [BUTTON.LB, BUTTON.RB, BUTTON.START] }))].sort()).toEqual(['FORFEIT', 'SKIP_TO_END', 'SKIP_TURN']);
+  it('default: LB skip turn, RB gimmick, Y skip to end; triggers and stick-clicks unbound', () => {
+    expect([...readIntents(fakePad({ pressed: [BUTTON.LB, BUTTON.RB, BUTTON.Y] }))].sort()).toEqual(['GIMMICK', 'SKIP_TO_END', 'SKIP_TURN']);
     expect([...readIntents(fakePad({ pressed: [BUTTON.LT, BUTTON.RT, BUTTON.L3, BUTTON.R3] }))]).toEqual([]);
+  });
+  it('honours a custom bindings map', () => {
+    const custom = { [BUTTON.RT]: 'CONFIRM', [BUTTON.A]: 'BACK' };
+    expect([...readIntents(fakePad({ pressed: [BUTTON.RT, BUTTON.A, BUTTON.B] }), 0.5, custom)].sort()).toEqual(['BACK', 'CONFIRM']);
   });
 });
 
@@ -72,7 +77,7 @@ describe('createGamepadInput', () => {
 
   it('confirm/back/menu never repeat while held', () => {
     const h = harness();
-    h.set(fakePad({ pressed: [BUTTON.B, BUTTON.X, BUTTON.Y] }));
+    h.set(fakePad({ pressed: [BUTTON.B, BUTTON.X, BUTTON.RB] }));
     for (let t = 0; t <= 2000; t += 16) h.at(t);
     expect(h.types().sort()).toEqual(['BACK', 'GIMMICK', 'SWITCH_MENU']);
   });
@@ -134,6 +139,20 @@ describe('createGamepadInput', () => {
     expect(h.status.at(-1)).toMatchObject({ type: 'disconnected' });
     h.set(fakePad({ pressed: [BUTTON.A] })); h.at(32);
     expect(h.types()).toEqual(['CONFIRM', 'CONFIRM']); // re-plugged press counts as a new edge
+  });
+
+  it('emits raw button edges (for the remap UI) and reads bindings from a function', () => {
+    const raw = [];
+    let map = { [BUTTON.A]: 'CONFIRM' };
+    const h = harness({ onRawButton: i => raw.push(i), bindings: () => map });
+    h.set(fakePad({ pressed: [BUTTON.RT] })); h.at(0); h.at(16);
+    expect(raw).toEqual([BUTTON.RT]);
+    expect(h.types()).toEqual([]);          // RT unbound
+    map = { [BUTTON.RT]: 'CONFIRM' };       // remapped live
+    h.set(fakePad()); h.at(32);
+    h.set(fakePad({ pressed: [BUTTON.RT] })); h.at(48);
+    expect(h.types()).toEqual(['CONFIRM']);
+    expect(raw).toEqual([BUTTON.RT, BUTTON.RT]);
   });
 
   it('start/stop drive the frame loop', () => {

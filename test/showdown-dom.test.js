@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { createAdapter, CURSOR_CLASS, STYLE_ID } from '../src/showdown-dom.js';
+import { createAdapter, CURSOR_CLASS, PANE_CLASS, HINT_CLASS, STYLE_ID } from '../src/showdown-dom.js';
 
 const fixture = name => readFileSync(path.join(process.cwd(), 'test', 'fixtures', `${name}.html`), 'utf8');
 
@@ -167,6 +167,21 @@ describe('acting', () => {
     expect(a.readScreen().controls).toMatchObject({ skipTurn: false, goToEnd: false });
   });
 
+  it('playback buttons form a PLAYBACK pane the cursor can select', () => {
+    document.body.innerHTML = `<div class="ps-room" id="room-battle-x-9"><div class="battle-controls"><p><button class="button" name="skipTurn">Skip turn</button> <button class="button" name="goToEnd">Skip to end</button></p></div></div>`;
+    const a = adapter();
+    const s = a.readScreen();
+    expect(Object.keys(s.panes)).toEqual(['PLAYBACK']);
+    expect(s.panes.PLAYBACK.items.map(i => i.id)).toEqual(['PLAYBACK:skipTurn', 'PLAYBACK:goToEnd']);
+    const clicked = [];
+    document.body.addEventListener('click', e => clicked.push(e.target.name), { once: true });
+    expect(a.activate('PLAYBACK', 1, 'PLAYBACK:goToEnd')).toBe(true);
+    expect(clicked).toEqual(['goToEnd']);
+    // Post-battle: pause/first/prev/skip/end are all in the pane; replay/main-menu buttons are not.
+    document.body.innerHTML = `<div class="ps-room" id="room-battle-x-9"><div class="battle-controls"><div class="controls"><p><button name="pause">Pause</button><button name="instantReplay">First</button><button name="rewindTurn">Prev</button><button name="skipTurn">Skip</button><button name="goToEnd">End</button></p><p><button name="saveReplay">Upload</button><button name="closeAndMainMenu">Main menu</button></p></div></div></div>`;
+    expect(a.readScreen().panes.PLAYBACK.items.map(i => i.id)).toEqual(['PLAYBACK:pause', 'PLAYBACK:instantReplay', 'PLAYBACK:rewindTurn', 'PLAYBACK:skipTurn', 'PLAYBACK:goToEnd']);
+  });
+
   it('forfeit sends /forfeit to the current room through the client API', () => {
     mountRoom('03-move-select', { roomId: 'battle-gen9vgc-77' });
     const sent = [];
@@ -227,7 +242,49 @@ describe('cursor highlight', () => {
     expect(document.querySelectorAll('#' + STYLE_ID).length).toBe(1);
     a.clearCursor();
     expect(document.querySelectorAll('.' + CURSOR_CLASS).length).toBe(0);
+    expect(document.querySelectorAll('.' + PANE_CLASS).length).toBe(0);
     expect(a.setCursor('MOVE', 42)).toBe(false);
+  });
+
+  it('draws one overlay box around the pane the cursor is in (union of both target rows)', () => {
+    mountRoom('03-move-select');
+    const a = adapter();
+    a.setCursor('MOVE', 0);
+    let boxes = [...document.querySelectorAll('.' + PANE_CLASS)];
+    expect(boxes.length).toBe(1);
+    expect(boxes[0].parentElement.classList.contains('battle-controls')).toBe(true);
+    expect(boxes[0].style.top).toBe('96px');      // rect stub: movemenu row at 100 − 4px pad
+    a.setCursor('SWITCH', 2);
+    boxes = [...document.querySelectorAll('.' + PANE_CLASS)];
+    expect(boxes.length).toBe(1);                 // old box removed
+    expect(boxes[0].style.top).toBe('136px');     // second menu row
+    mountRoom('04-target-select');
+    a.setCursor('TARGET', 0);
+    boxes = [...document.querySelectorAll('.' + PANE_CLASS)];
+    expect(boxes.length).toBe(1);
+    expect(boxes[0].style.height).toBe('78px');   // spans rows at 100 and 140 (+30 tall, +4 pad each side)
+  });
+
+  it('paints button hints idempotently and removes them on clear', () => {
+    mountRoom('03-move-select');
+    const a = adapter();
+    a.paintHints({ gimmick: 'RB', skipTurn: 'LB', goToEnd: 'Y' });
+    const hints = [...document.querySelectorAll('.' + HINT_CLASS)];
+    expect(hints.length).toBe(1);
+    expect(hints[0].textContent).toBe('(RB)');
+    expect(hints[0].closest('label.megaevo')).toBeTruthy();
+    a.paintHints({ gimmick: 'RB' });
+    expect(document.querySelectorAll('.' + HINT_CLASS).length).toBe(1); // no duplicates
+    a.paintHints({ gimmick: 'LT' });
+    expect(document.querySelector('.' + HINT_CLASS).textContent).toBe('(LT)');
+    // Hints don't leak into item identity
+    expect(a.readScreen().panes.MOVE.items[0].id).toBe('move:Flamethrower');
+    document.body.innerHTML = `<div class="ps-room" id="room-battle-x-9"><div class="battle-controls"><p><button name="skipTurn">Skip turn</button> <button name="goToEnd">Skip to end</button></p></div></div>`;
+    a.paintHints({ skipTurn: 'LB', goToEnd: 'Y' });
+    expect([...document.querySelectorAll('.' + HINT_CLASS)].map(h => h.textContent)).toEqual(['(LB)', '(Y)']);
+    expect(a.readScreen().panes.PLAYBACK.items.map(i => i.id)).toEqual(['PLAYBACK:skipTurn', 'PLAYBACK:goToEnd']);
+    a.clearHints();
+    expect(document.querySelectorAll('.' + HINT_CLASS).length).toBe(0);
   });
 });
 
@@ -248,6 +305,7 @@ describe('onControlsChanged', () => {
     expect(fires).toBe(0);
 
     a.setCursor('MOVE', 1); a.setCursor('MOVE', 2);
+    a.paintHints({ gimmick: 'RB' }); a.paintHints({ gimmick: 'LT' }); a.clearHints();
     await tick();
     expect(fires).toBe(0);
 

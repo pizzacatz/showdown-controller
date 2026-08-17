@@ -226,6 +226,10 @@ async function main() {
       await drive('GIMMICK'); await sleep(100);
       check((await inRoom(A, r => r.querySelector('input[name="terastallize"]')?.checked)) === false, 'Y toggles tera off again');
       await snapshot(A, '10-script-cursor-move3');
+      await A.screenshot({ path: path.join(OUT, '10-script-cursor-move3.png'), clip: { x: 0, y: 360, width: 660, height: 300 } });
+      await drive('SWITCH_MENU'); await drive('LEFT', 'LEFT');
+      await A.screenshot({ path: path.join(OUT, '10b-disabled-party.png'), clip: { x: 0, y: 360, width: 660, height: 300 } });
+      await drive('RIGHT', 'RIGHT', 'BACK');
       d = await drive('LEFT', 'LEFT', 'LEFT');
       const firstMove = d.focusId; // first move of the lead: single-target for every mon on this team
       d = await drive('CONFIRM'); await sleep(250); d = await drive();
@@ -290,10 +294,37 @@ async function main() {
       if (sawSkip) {
         d = await drive();
         check(d.controls.goToEnd === true && d.controls.skipTurn === true, `adapter sees skipTurn/goToEnd (${JSON.stringify(d.controls)})`);
-        await drive('SKIP_TO_END'); await sleep(400);
+        check(d.pane === 'PLAYBACK' && d.panes.PLAYBACK?.n === 2, `playback buttons are a cursor pane (${d.pane}, ${JSON.stringify(d.panes)})`);
+        const hintTexts = await inRoom(A, r => [...r.querySelectorAll('.battle-controls .sgp-hint')].map(h => h.textContent));
+        check(hintTexts.join(' ') === '(LB) (Y)', `hints painted on skip buttons (${hintTexts.join(' ')})`);
+        const boxed = await inRoom(A, r => r.querySelectorAll('.battle-controls .sgp-pane').length);
+        check(boxed === 1, `pane box drawn around the playback row (${boxed})`);
+        d = await drive('RIGHT');
+        check(d.focusId === 'PLAYBACK:goToEnd', `RIGHT moves cursor to Skip to end (${d.focusId})`);
+        await drive('CONFIRM'); await sleep(400);
         const caughtUp = await inRoom(A, r => !r.querySelector('.battle-controls button[name="goToEnd"]') && !!r.querySelector('.battle-controls button[name="chooseMove"]'));
-        check(caughtUp === true, 'RB (skip to end) snaps playback to the new turn');
+        check(caughtUp === true, 'A on Skip to end snaps playback to the new turn');
       }
+      // Gimmick hint next to the tera checkbox
+      d = await drive();
+      const gimHint = await inRoom(A, r => r.querySelector('.battle-controls label.megaevo .sgp-hint')?.textContent);
+      check(gimHint === '(RB)', `tera checkbox shows the gimmick hint (${gimHint})`);
+      badge = await badgeOf();
+      check(/\(Select\) forfeit/.test(badge?.text || ''), `pill always shows the forfeit hint (${badge?.text})`);
+      // Settings panel: click the pill, rebind GIMMICK to LT via a raw press, hint follows
+      await A.evaluate(() => document.getElementById('sgp-status').click());
+      let panel = await A.evaluate(() => !!document.getElementById('sgp-settings'));
+      check(panel === true, 'clicking the pill opens the bindings panel');
+      await A.evaluate(() => document.querySelector('#sgp-settings button[data-rebind="GIMMICK"]').click());
+      await A.evaluate(() => window.__showdownGamepad.settings.onRawButton(6)); // LT
+      await sleep(100);
+      const gimHint2 = await inRoom(A, r => r.querySelector('.battle-controls label.megaevo .sgp-hint')?.textContent);
+      const stored = await A.evaluate(() => JSON.parse(localStorage.getItem('showdown-gamepad.bindings.v1') || '{}'));
+      check(gimHint2 === '(LT)' && stored[6] === 'GIMMICK' && !stored[5], `rebinding GIMMICK to LT updates the hint and localStorage (${gimHint2}, ${JSON.stringify(stored)})`);
+      await A.evaluate(() => document.querySelector('#sgp-settings button[data-reset]').click());
+      await A.evaluate(() => document.querySelector('#sgp-settings button[data-close]').click());
+      panel = await A.evaluate(() => !!document.getElementById('sgp-settings'));
+      check(panel === false && (await inRoom(A, r => r.querySelector('.battle-controls label.megaevo .sgp-hint')?.textContent)) === '(RB)', 'reset + close restores defaults');
       d = await drive(); check(d.controls.skipTurn === false, 'LB is a no-op when there is nothing to skip');
 
       // Forfeit: arm, cancel with another button, arm again, confirm

@@ -1,12 +1,15 @@
 // Entry point: wires INPUT → NAVIGATION → ADAPTER.
 import { createGamepadInput, DEFAULTS as INPUT_DEFAULTS } from './gamepad.js';
 import { initialState, reduce, sync } from './cursor.js';
-import { createAdapter } from './showdown-dom.js';
+import { createAdapter, BADGE_ID } from './showdown-dom.js';
+import { createSettings } from './settings.js';
 
 const CONFIG = {
   debug: false,
   enabledByDefault: true,
   toggleKey: { key: 'G', ctrlKey: true, shiftKey: true }, // Ctrl+Shift+G — free in the classic client
+  // Button bindings live in src/gamepad.js (DEFAULT_BINDINGS) and can be
+  // remapped in-page: click the 🎮 status pill → Rebind. Stored in localStorage.
   deadzone: INPUT_DEFAULTS.deadzone,
   repeatDelay: INPUT_DEFAULTS.repeatDelay,
   repeatInterval: INPUT_DEFAULTS.repeatInterval,
@@ -20,23 +23,33 @@ const dbg = (...a) => { if (CONFIG.debug) console.log(TAG, ...a); };
 export function start(win = window) {
   const doc = win.document;
   const adapter = createAdapter({ doc, win });
+  const settings = createSettings({ doc, storage: safeStorage(win), onChange: () => { log('bindings updated'); paint(); } });
   let state = initialState();
   let enabled = CONFIG.enabledByDefault;
   let padSeen = false;
   let forfeitArmedAt = 0;
   let forfeitTimer = null;
 
+  const L = intent => settings.labelFor(intent);
+  const forfeitHint = () => `(${L('FORFEIT')}) forfeit`;
+
   function status() {
-    if (forfeitArmedAt) { adapter.setStatus('off', '🎮 FORFEIT armed — press Start again to concede, anything else to cancel'); return; }
-    if (!padSeen) adapter.setStatus('waiting', '🎮 Gamepad: press any button on the controller');
-    else if (!enabled) adapter.setStatus('off', '🎮 Gamepad OFF — Back/Select or Ctrl+Shift+G to enable');
-    else if (state.pane === 'WAIT') adapter.setStatus('on', '🎮 Gamepad ON — waiting for opponent (B = cancel)');
-    else if (state.pane === 'INACTIVE') adapter.setStatus('on', '🎮 Gamepad ON — no battle controls on screen');
-    else adapter.setStatus('on', `🎮 Gamepad ON — ${state.pane.toLowerCase().replace('_', ' ')}`);
+    if (forfeitArmedAt) { adapter.setStatus('off', `🎮 FORFEIT armed — press ${L('FORFEIT')} again to concede, anything else to cancel`); return; }
+    if (!padSeen) adapter.setStatus('waiting', '🎮 Gamepad: press any button on the controller · click here for bindings');
+    else if (!enabled) adapter.setStatus('off', `🎮 Gamepad OFF — ${L('TOGGLE_LAYER')} or Ctrl+Shift+G to enable`);
+    else if (state.pane === 'WAIT') adapter.setStatus('on', `🎮 Gamepad ON — waiting for opponent (${L('BACK')} = cancel) · ${forfeitHint()}`);
+    else if (state.pane === 'INACTIVE') adapter.setStatus('on', `🎮 Gamepad ON — no battle controls on screen · ${forfeitHint()}`);
+    else adapter.setStatus('on', `🎮 Gamepad ON — ${state.pane.toLowerCase().replace('_', ' ')} · ${forfeitHint()}`);
+  }
+
+  function hints() {
+    if (!enabled || !padSeen) { adapter.clearHints(); return; }
+    adapter.paintHints({ gimmick: L('GIMMICK'), skipTurn: L('SKIP_TURN'), goToEnd: L('SKIP_TO_END') });
   }
 
   function paint() {
     status();
+    hints();
     if (!enabled || !padSeen) { adapter.clearCursor(); return; }
     if (state.pane === 'WAIT' || state.pane === 'INACTIVE') { adapter.clearCursor(); return; }
     adapter.setCursor(state.pane, state.index);
@@ -91,11 +104,12 @@ export function start(win = window) {
     }
     forfeitArmedAt = now;
     forfeitTimer = win.setTimeout(() => { disarmForfeit(); paint(); }, CONFIG.forfeitConfirmMs);
-    log(`forfeit armed — press Start again within ${CONFIG.forfeitConfirmMs / 1000}s to concede`);
+    log(`forfeit armed — press ${L('FORFEIT')} again within ${CONFIG.forfeitConfirmMs / 1000}s to concede`);
     paint();
   }
 
   function handleIntent(type) {
+    if (settings.isCapturing()) return; // that press was consumed by the remap panel
     if (type === 'TOGGLE_LAYER') { disarmForfeit(); setEnabled(!enabled); return; }
     if (!enabled) return;
     if (adapter.isTyping()) { dbg('ignored (typing):', type); return; }
@@ -109,6 +123,8 @@ export function start(win = window) {
   }
 
   const input = createGamepadInput({
+    bindings: () => settings.bindings,
+    onRawButton: idx => { if (settings.onRawButton(idx)) dbg('rebound via raw button', idx); },
     deadzone: CONFIG.deadzone,
     repeatDelay: CONFIG.repeatDelay,
     repeatInterval: CONFIG.repeatInterval,
@@ -144,7 +160,12 @@ export function start(win = window) {
     }
   }, true);
 
-  log('loaded — press any controller button to activate. Ctrl+Shift+G or Back/Select toggles the layer.');
+  // Clicking the status pill opens the bindings panel.
+  doc.addEventListener('click', e => {
+    if (e.target && e.target.closest && e.target.closest('#' + BADGE_ID)) settings.toggle();
+  }, true);
+
+  log(`loaded — press any controller button to activate. ${L('TOGGLE_LAYER')} or Ctrl+Shift+G toggles the layer; click the 🎮 pill to remap buttons.`);
   status();
 
   // Test / debugging hook. Lets tools/recon.js and the console drive the
@@ -164,9 +185,14 @@ export function start(win = window) {
       };
     },
     resync,
+    settings,
     get state() { return state; },
     input,
   };
+}
+
+function safeStorage(win) {
+  try { return win.localStorage; } catch (_) { return null; }
 }
 
 // Auto-start when running as a userscript (not when imported by tests).
