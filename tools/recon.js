@@ -227,6 +227,12 @@ async function main() {
       check((await inRoom(A, r => r.querySelector('input[name="terastallize"]')?.checked)) === false, 'Y toggles tera off again');
       await snapshot(A, '10-script-cursor-move3');
       await A.screenshot({ path: path.join(OUT, '10-script-cursor-move3.png'), clip: { x: 0, y: 360, width: 660, height: 300 } });
+      const dimmed = await inRoom(A, r => r.querySelectorAll('.battle-controls .sgp-disabled').length);
+      const heading = await inRoom(A, r => r.querySelector('.battle-controls .moveselect button.sgp-heading')?.textContent);
+      check(dimmed === 2 && heading === 'Attack', `party slots in battle are dimmed (${dimmed}) and the Attack heading is tinted (${heading})`);
+      await A.evaluate(() => document.body.classList.add('dark'));
+      await A.screenshot({ path: path.join(OUT, '10c-dark-theme.png'), clip: { x: 0, y: 360, width: 660, height: 300 } });
+      await A.evaluate(() => document.body.classList.remove('dark'));
       await drive('SWITCH_MENU'); await drive('LEFT', 'LEFT');
       await A.screenshot({ path: path.join(OUT, '10b-disabled-party.png'), clip: { x: 0, y: 360, width: 660, height: 300 } });
       await drive('RIGHT', 'RIGHT', 'BACK');

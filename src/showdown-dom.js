@@ -27,51 +27,81 @@ export const SELECTORS = {
   goToEnd: 'button[name="goToEnd"]',
   timer: '.timerbutton, .timer',
   playback: 'button[name="pause"], button[name="play"], button[name="instantReplay"], button[name="rewindTurn"], button[name="skipTurn"], button[name="goToEnd"]',
+  headings: { MOVE: '.moveselect button', SWITCH: '.switchselect button', TEAM: '.switchselect button' },
   qolForfeit: 'button[data-qol="forfeit"]', // QoL Battle Tools' arm-then-confirm forfeit button, if installed
 };
 
 export const CURSOR_CLASS = 'sgp-cursor';
 export const PANE_CLASS = 'sgp-pane';
+export const DISABLED_CLASS = 'sgp-disabled';
+export const HEADING_CLASS = 'sgp-heading';
 export const HINT_CLASS = 'sgp-hint';
 export const BADGE_ID = 'sgp-status';
 export const STYLE_ID = 'sgp-cursor-style';
 export const CURSOR_CSS = `
-/* Item cursor: solid, opaque, no glow. */
+/* ---- Visual language (see docs/ui-design.md) --------------------------------
+   Layer 1  item cursor   : two-tone ring (white inner, orange outer). The ONLY
+                            high-contrast element; slow two-state pulse.
+   Layer 2  active group  : soft orange tray behind the row + tinted heading.
+   Layer 3  not selectable: gray translucent overlay + desaturation. The ring
+                            still draws on top when the cursor lands there.
+   One accent (orange). No blue (Showdown uses it for Water/Ice moves, links,
+   the Switch heading), no red/yellow/green (HP-bar states). Red is reserved
+   for the armed-forfeit state of the status pill.
+------------------------------------------------------------------------------ */
 .${CURSOR_CLASS} {
-  outline: 3px solid #ff8c00 !important;
-  outline-offset: -3px !important;
-  box-shadow: inset 0 0 0 4px #fff, 0 0 0 1px #000 !important;
+  outline: 2px solid #fff !important;          /* inner ring */
+  outline-offset: -2px !important;
+  box-shadow: 0 0 0 3px #ff8c00 !important;    /* outer ring */
   position: relative;
   z-index: 2;
+  animation: sgp-pulse 1.6s steps(1, end) infinite;
 }
-/* Not selectable: high-contrast dashed white-on-black ring (works on light and dark themes). */
-.${CURSOR_CLASS}:disabled, .${CURSOR_CLASS}.disabled {
-  outline: 4px dashed #fff !important;
-  outline-offset: -4px !important;
-  box-shadow: inset 0 0 0 5px #000, 0 0 0 1px #000 !important;
+@keyframes sgp-pulse {
+  0%   { box-shadow: 0 0 0 3px #ff8c00; }
+  50%  { box-shadow: 0 0 0 4px #ff8c00; }
+  100% { box-shadow: 0 0 0 3px #ff8c00; }
 }
-/* Box around the pane the cursor is in (moves / party / targets / playback):
-   an overlay sized to the union of the pane's buttons. */
+@media (prefers-reduced-motion: reduce) { .${CURSOR_CLASS} { animation: none; } }
+
+/* Not selectable (0 PP, active/fainted mon, chosen team slot, disabled target). */
+.${DISABLED_CLASS} { position: relative; filter: saturate(0.35); }
+.${DISABLED_CLASS}::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: rgba(110, 110, 110, 0.42);
+}
+.dark .${DISABLED_CLASS}::after { background: rgba(0, 0, 0, 0.45); }
+
+/* Active group: a tray behind the row (overlay sized to the union of the
+   pane's buttons, painted BELOW the buttons via isolation + negative z-index)
+   and the row's heading (Attack / Switch) tinted. */
+.battle-controls { isolation: isolate; }
 .${PANE_CLASS} {
-  position: absolute; pointer-events: none; z-index: 1;
-  border: 1px solid rgba(255, 140, 0, 0.8); border-radius: 6px; box-sizing: border-box;
+  position: absolute; pointer-events: none; z-index: -1;
+  background: rgba(255, 140, 0, 0.22); border-radius: 8px;
 }
-/* Standalone forfeit hint (top-right of the controls) when no forfeit button exists to attach to. */
-.${HINT_CLASS}.sgp-hint-forfeit { position: absolute; right: 78px; top: 9px; margin: 0; z-index: 3; }
-/* Button hints, e.g. "(RB)" next to Terastallize. */
+.dark .${PANE_CLASS} { background: rgba(255, 140, 0, 0.25); }
+.${HEADING_CLASS} { color: #d97400 !important; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.dark .${HEADING_CLASS} { color: #ffa640 !important; }
+
+/* Button hints, e.g. "(RB)" next to Terastallize — same accent and radius as the ring. */
 .${HINT_CLASS} {
   font: bold 9px/1 Verdana, sans-serif; color: #fff; background: #ff8c00;
-  border-radius: 3px; padding: 1px 4px; margin-left: 4px; vertical-align: middle;
+  border-radius: 4px; padding: 2px 5px; margin-left: 4px; vertical-align: middle;
   pointer-events: none;
 }
+/* Standalone forfeit hint (by the Timer button) when no forfeit button exists to attach to. */
+.${HINT_CLASS}.sgp-hint-forfeit { position: absolute; right: 78px; top: 9px; margin: 0; z-index: 3; }
+
+/* Status pill: accent = on, gray = waiting, red = off / forfeit armed. */
 #${BADGE_ID} {
   position: fixed; right: 8px; bottom: 8px; z-index: 9999;
   font: 11px/1.4 Verdana, sans-serif; color: #fff;
-  background: rgba(40, 40, 40, 0.85); border-radius: 12px; padding: 3px 10px;
-  cursor: pointer; opacity: 0.95; user-select: none;
+  background: rgba(60, 60, 60, 0.9); border-radius: 12px; padding: 3px 10px;
+  cursor: pointer; user-select: none;
 }
-#${BADGE_ID}[data-state="on"] { background: rgba(30, 120, 60, 0.9); }
-#${BADGE_ID}[data-state="off"] { background: rgba(120, 40, 40, 0.9); }
+#${BADGE_ID}[data-state="on"] { background: #c96f00; }
+#${BADGE_ID}[data-state="off"] { background: #a52a2a; }
 `;
 
 function textOf(el) {
@@ -324,6 +354,8 @@ export function createAdapter(options = {}) {
 
   function clearCursor() {
     doc.querySelectorAll('.' + CURSOR_CLASS).forEach(el => el.classList.remove(CURSOR_CLASS));
+    doc.querySelectorAll('.' + DISABLED_CLASS).forEach(el => el.classList.remove(DISABLED_CLASS));
+    doc.querySelectorAll('.' + HEADING_CLASS).forEach(el => el.classList.remove(HEADING_CLASS));
     doc.querySelectorAll('.' + PANE_CLASS).forEach(el => el.remove());
   }
 
@@ -335,7 +367,15 @@ export function createAdapter(options = {}) {
     const item = p && p.items[index];
     if (!item) return false;
     item.el.classList.add(CURSOR_CLASS);
-    // Box the pane: an overlay around the union of the pane's visible
+    // Layer 3: dim every non-selectable button in every visible pane.
+    for (const pn of Object.values(screen.panes)) {
+      for (const it of pn.items) if (it.disabled && !it.skip) it.el.classList.add(DISABLED_CLASS);
+    }
+    // Layer 2b: tint the active group's heading (Attack / Switch / Choose Lead).
+    const controlsEl = item.el.closest(SELECTORS.controls);
+    const hsel = SELECTORS.headings[paneName];
+    if (controlsEl && hsel) { const h = controlsEl.querySelector(hsel); if (h) h.classList.add(HEADING_CLASS); }
+    // Layer 2a: tray behind the pane — an overlay around the union of the pane's visible
     // buttons, positioned inside .battle-controls (which is position:absolute
     // in the client, so it is the offset parent).
     const controls = item.el.closest(SELECTORS.controls);
@@ -417,7 +457,7 @@ export function createAdapter(options = {}) {
     };
     // Ignore class mutations that only add/remove our own cursor class,
     // otherwise painting the cursor would re-trigger the observer forever.
-    const OURS = new Set([CURSOR_CLASS, PANE_CLASS]);
+    const OURS = new Set([CURSOR_CLASS, PANE_CLASS, DISABLED_CLASS, HEADING_CLASS]);
     const strip = s => (s || '').split(/\s+/).filter(c => c && !OURS.has(c)).sort().join(' ');
     const isHint = n => n && n.nodeType === 1 && (n.classList.contains(HINT_CLASS) || n.classList.contains(PANE_CLASS));
     const observer = new win.MutationObserver(records => {

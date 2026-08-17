@@ -50,12 +50,14 @@ Team preview, move select, doubles target select, forced switches and the
 "waiting for opponent" state are all covered. Disabled moves and
 active/fainted party slots can be highlighted but never activated.
 
-The cursor is a solid orange outline; a thin 1px orange box marks which group
-(moves / party / targets / playback) you're in, and a black-and-white dashed
-ring means "not selectable" (0 PP, active or fainted Pokémon). The cursor
-survives Showdown's turn re-renders by identity (it stays on *Protect*, not on
-"the third button"), remembers the last move you used across turns, and never
-wraps around edges.
+The cursor is a two-tone ring (white inside, orange outside) that pulses
+gently; a soft orange tray plus an orange *Attack* / *Switch* heading marks
+which group you're in; not-selectable buttons (0 PP, active or fainted
+Pokémon) are dimmed gray. One accent color, readable on the light and dark
+themes — see [`docs/ui-design.md`](docs/ui-design.md) for the reasoning. The
+cursor survives Showdown's turn re-renders by identity (it stays on *Protect*,
+not on "the third button"), remembers the last move you used across turns,
+and never wraps around edges.
 
 While you have text in the chat box the pad is ignored (the empty, auto-focused
 chat box does not count). Unplug the pad and you're back to mouse only.
@@ -89,7 +91,7 @@ a browser.
 
 ```sh
 npm install
-npm test          # unit tests (70)
+npm test          # unit tests (71)
 npm run build     # dist/showdown-gamepad.user.js
 npm run recon -- --script dist/showdown-gamepad.user.js   # e2e vs a LOCAL server
 ```
@@ -110,9 +112,9 @@ report `mapping === "standard"` are refused with a console warning rather than
 guessed at. Classic client only; the `/beta` Preact client uses different
 markup.
 
-See [`docs/showdown-gamepad-prd.md`](docs/showdown-gamepad-prd.md) and
-[`docs/dom-recon.md`](docs/dom-recon.md) for the design and the verified DOM
-facts.
+See [`docs/showdown-gamepad-prd.md`](docs/showdown-gamepad-prd.md) (design),
+[`docs/dom-recon.md`](docs/dom-recon.md) (verified DOM facts) and
+[`docs/ui-design.md`](docs/ui-design.md) (visual language and why).
 
 ## License
 

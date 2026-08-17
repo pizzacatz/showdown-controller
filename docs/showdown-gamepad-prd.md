@@ -346,6 +346,12 @@ permanent `(Select) forfeit` hint in the pill; playback buttons are a
 cursor-selectable `PLAYBACK` pane; solid opaque cursor, overlay box around the
 current pane, high-contrast dashed ring for not-selectable items.
 
+v0.4.0 (2026-08-17): visual language reworked — two-tone pulsing cursor
+ring, orange tray + tinted heading for the active group, gray dimming for
+non-selectable buttons, one accent color, light/dark values. Rationale and
+rejected alternatives in [ui-design.md](ui-design.md); this supersedes §7
+"Highlight".
+
 Validation list (§9): every item except the physical-pad ones (first-press
 detection, unplug, analog diagonals on real hardware, coexistence with the
 replay-capture script) is exercised by `tools/recon.js --script` against the

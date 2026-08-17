@@ -71,6 +71,11 @@ attributes — clicking them opens a Showdown popup — so the adapter marks the
   always. The client's own shortcut logic (`client.js` `safeLocation`) treats
   an *empty* textarea as safe; the adapter does the same: typing = a focused
   text field **with content**.
+- **Painting under the buttons.** `.movebutton` / `.switchmenu button` are
+  `position: relative` (positioned, z-index auto), so an overlay meant to sit
+  *behind* them needs `z-index: -1` inside a stacking context on
+  `.battle-controls` (`isolation: isolate`); otherwise it paints on top of the
+  buttons or under the controls' background. `body.dark` is the dark-theme hook.
 - **Never `.focus()` a button.** The client binds ←/→ (switch room) and
   Shift+←/→ (move room) on `keydown` when focus is on a button or empty
   textarea. The cursor is a CSS class (`sgp-cursor`), not focus.

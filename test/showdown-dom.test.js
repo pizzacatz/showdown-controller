@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { createAdapter, CURSOR_CLASS, PANE_CLASS, HINT_CLASS, STYLE_ID } from '../src/showdown-dom.js';
+import { createAdapter, CURSOR_CLASS, PANE_CLASS, HINT_CLASS, DISABLED_CLASS, HEADING_CLASS, STYLE_ID } from '../src/showdown-dom.js';
 
 const fixture = name => readFileSync(path.join(process.cwd(), 'test', 'fixtures', `${name}.html`), 'utf8');
 
@@ -244,6 +244,25 @@ describe('cursor highlight', () => {
     expect(document.querySelectorAll('.' + CURSOR_CLASS).length).toBe(0);
     expect(document.querySelectorAll('.' + PANE_CLASS).length).toBe(0);
     expect(a.setCursor('MOVE', 42)).toBe(false);
+  });
+
+  it('dims every non-selectable button and tints the active heading', () => {
+    mountRoom('03-move-select');
+    const a = adapter();
+    a.setCursor('MOVE', 0);
+    const dimmed = [...document.querySelectorAll('.' + DISABLED_CLASS)].map(el => el.getAttribute('value'));
+    expect(dimmed).toEqual(['Charizard,active', 'Pikachu,active']);   // party slots in battle
+    expect(document.querySelector('.moveselect button').classList.contains(HEADING_CLASS)).toBe(true);
+    expect(document.querySelector('.switchselect button').classList.contains(HEADING_CLASS)).toBe(false);
+    a.setCursor('SWITCH', 2);
+    expect(document.querySelector('.moveselect button').classList.contains(HEADING_CLASS)).toBe(false);
+    expect(document.querySelector('.switchselect button').classList.contains(HEADING_CLASS)).toBe(true);
+    expect(document.querySelectorAll('.' + DISABLED_CLASS).length).toBe(2);
+    a.clearCursor();
+    expect(document.querySelectorAll('.' + DISABLED_CLASS + ', .' + HEADING_CLASS).length).toBe(0);
+    mountRoom('04-target-select');
+    a.setCursor('TARGET', 0);
+    expect(document.querySelectorAll('.' + DISABLED_CLASS).length).toBe(0); // hidden placeholder is skip, not dimmed
   });
 
   it('draws one overlay box around the pane the cursor is in (union of both target rows)', () => {
