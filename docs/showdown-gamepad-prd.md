@@ -358,6 +358,10 @@ menu / Rematch) selectable; `POPUP` pane for any `.ps-popup` (B closes) and
 `MENU` pane for the main menu — the controller now works from the main screen
 through a battle and back. Forfeit hint/arm disabled once the battle is over.
 
+v0.6.0 (2026-08-17): main-menu pane restricted to the battle group (format,
+quick-select, team, Battle!) with wrap-around top↔bottom (battle panes still
+clamp); RT = close current tab, L3/R3 = previous/next tab.
+
 Validation list (§9): every item except the physical-pad ones (first-press
 detection, unplug, analog diagonals on real hardware, coexistence with the
 replay-capture script) is exercised by `tools/recon.js --script` against the

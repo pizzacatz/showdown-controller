@@ -135,8 +135,31 @@ async function main() {
       await A.evaluate(() => { app.focusRoom(''); window.__showdownGamepad.enable(true); });
       await sleep(300);
       let d = await drive0();
-      check(d.pane === 'MENU' && d.panes.MENU?.n >= 4, `main menu is a MENU pane (${d.pane}, ${JSON.stringify(d.panes)})`);
+      check(d.pane === 'MENU' && d.panes.MENU?.n >= 3, `main menu is a MENU pane (${d.pane}, ${JSON.stringify(d.panes)})`);
       log('MENU items:', JSON.stringify(d.ids));
+      check(!d.ids.some(id => /joinRoom/.test(id)) && d.ids.some(id => /^MENU:search:/.test(id)), 'MENU pane is only the battle group (no Teambuilder/Ladder/...)');
+      const n0 = d.ids.length;
+      d = await drive0('UP');
+      check(d.index === n0 - 1, `UP from the top wraps to the bottom (${d.index}/${n0 - 1})`);
+      d = await drive0('DOWN');
+      check(d.index === 0, `DOWN from the bottom wraps to the top (${d.index})`);
+      // Tabs: open the teambuilder, close it with the close-tab intent, switch tabs
+      await A.evaluate(() => app.joinRoom('teambuilder')); await sleep(400);
+      let cur = await A.evaluate(() => app.curRoom.id);
+      check(cur === 'teambuilder', `teambuilder tab opened and focused (${cur})`);
+      await drive0('PREV_TAB'); await sleep(200);
+      cur = await A.evaluate(() => app.curRoom.id);
+      check(cur === '', `PREV_TAB goes back to the main menu (${JSON.stringify(cur)})`);
+      await drive0('NEXT_TAB'); await sleep(200);
+      cur = await A.evaluate(() => app.curRoom.id);
+      check(cur === 'teambuilder', `NEXT_TAB returns to the teambuilder (${cur})`);
+      await drive0('CLOSE_TAB'); await sleep(400);
+      const rooms = await A.evaluate(() => Object.keys(app.rooms));
+      cur = await A.evaluate(() => app.curRoom.id);
+      check(!rooms.includes('teambuilder'), `CLOSE_TAB closes the teambuilder tab (rooms: ${rooms.join(',')}; now on ${JSON.stringify(cur)})`);
+      await drive0('CLOSE_TAB'); await sleep(200);
+      check((await A.evaluate(() => Object.keys(app.rooms).includes(''))), 'CLOSE_TAB on the main menu does nothing');
+      await A.evaluate(() => app.focusRoom(''));
       // Walk down until the format selector is under the cursor, then A opens the popup
       const target = d.ids.findIndex(id => /^MENU:format:/.test(id));
       for (let hops = 0; hops < 15 && d.index !== target; hops++) d = await drive0(d.index < target ? 'DOWN' : 'UP');

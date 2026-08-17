@@ -234,6 +234,22 @@ describe('reduce()', () => {
     expect(r.actions.slice(0, 6).every(a => a === null)).toBe(true);
     expect(r.last).toEqual({ type: 'activate', pane: 'MENU', index: 2, id: 'M2' });
   });
+  it('wrap panes (main menu) wrap top↔bottom; battle panes still clamp', () => {
+    const wrapScr = { key: 'm', panes: { MENU: { items: items(4, 'M'), columns: 1, wrap: true } }, controls: {} };
+    let r = run(initialState(), wrapScr, 'UP');
+    expect(r.state.index).toBe(3);
+    r = run(r.state, wrapScr, 'DOWN');
+    expect(r.state.index).toBe(0);
+    expect(move(items(4), 1, 3, 'DOWN', true)).toBe(0);
+    expect(move([{ id: 'a' }, { id: 'b', skip: true }, { id: 'c' }], 1, 2, 'DOWN', true)).toBe(0);
+    expect(move([{ id: 'a' }, { id: 'b', skip: true }, { id: 'c' }], 1, 0, 'UP', true)).toBe(2);
+    expect(run(initialState(), moveScreen(), 'UP').state.index).toBe(0); // clamp
+  });
+  it('tab intents always emit their action', () => {
+    expect(run(initialState(), moveScreen(), 'CLOSE_TAB').last).toEqual({ type: 'closeTab' });
+    expect(run(initialState(), emptyScreen, 'PREV_TAB').last).toEqual({ type: 'prevTab' });
+    expect(run(initialState(), waitScreen, 'NEXT_TAB').last).toEqual({ type: 'nextTab' });
+  });
   it('LB/RB skip turn / skip to end only when the playback buttons are on screen', () => {
     const playing = { key: 'p', panes: {}, controls: { skipTurn: true, goToEnd: true } };
     expect(run(initialState(), playing, 'SKIP_TURN').last).toEqual({ type: 'skipTurn' });

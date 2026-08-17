@@ -44,9 +44,10 @@ describe('readIntents', () => {
     expect([...readIntents(fakePad({ axes: [-0.9, 0.7] }))]).toEqual(['LEFT']);
     expect([...readIntents(fakePad({ axes: [0.8, -0.8] }))]).toEqual(['RIGHT']); // tie → x wins
   });
-  it('default: LB skip turn, RB gimmick, Y skip to end; triggers and stick-clicks unbound', () => {
+  it('default: LB skip turn, RB gimmick, Y skip to end, RT close tab, L3/R3 prev/next tab; LT unbound', () => {
     expect([...readIntents(fakePad({ pressed: [BUTTON.LB, BUTTON.RB, BUTTON.Y] }))].sort()).toEqual(['GIMMICK', 'SKIP_TO_END', 'SKIP_TURN']);
-    expect([...readIntents(fakePad({ pressed: [BUTTON.LT, BUTTON.RT, BUTTON.L3, BUTTON.R3] }))]).toEqual([]);
+    expect([...readIntents(fakePad({ pressed: [BUTTON.RT, BUTTON.L3, BUTTON.R3] }))].sort()).toEqual(['CLOSE_TAB', 'NEXT_TAB', 'PREV_TAB']);
+    expect([...readIntents(fakePad({ pressed: [BUTTON.LT] }))]).toEqual([]);
   });
   it('honours a custom bindings map', () => {
     const custom = { [BUTTON.RT]: 'CONFIRM', [BUTTON.A]: 'BACK' };

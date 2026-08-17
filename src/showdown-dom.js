@@ -35,6 +35,12 @@ export const SELECTORS = {
   // Main menu (room id '' → element #room-). Includes injected buttons (Ghost Clicker) since they are plain buttons too.
   mainMenu: '.mainmenu',
   mainMenuRoom: '#room-',
+  // Only the battle group of the main menu: format selector, injected quick-
+  // select buttons (Ghost Clicker), team selector, Battle! / Cancel search.
+  mainMenuBattleForm: 'form.battleform',
+  menuGroup: '.menugroup',
+  roomTabClose: 'button[name="closeRoom"]',
+  roomTabs: '.maintabbar a.roomtab[href]', // one per open tab, DOM order = visual order; .cur = current
   headings: { MOVE: '.moveselect button', SWITCH: '.switchselect button', TEAM: '.switchselect button' },
   qolForfeit: 'button[data-qol="forfeit"]', // QoL Battle Tools' arm-then-confirm forfeit button, if installed
 };
@@ -230,8 +236,20 @@ export function createAdapter(options = {}) {
     if (!controls) {
       // Main menu?
       const menu = getMainMenu();
-      const p = menu && pane('MENU', Array.from(menu.querySelectorAll('button')));
-      if (p) return { key: `menu|${p.items.length}`, panes: { MENU: p }, controls: {}, room: null, menu };
+      if (menu) {
+        // The battle group(s): the search form (format / quick-select / team /
+        // Battle!) and, while you have games running, the "Games" group the
+        // client shows in its place (links to your battles + "Add game").
+        const groups = [];
+        for (const form of menu.querySelectorAll(SELECTORS.mainMenuBattleForm)) {
+          const g = form.closest(SELECTORS.menuGroup) || form;
+          if (!groups.includes(g)) groups.push(g);
+        }
+        if (!groups.length) { const g = menu.querySelector(SELECTORS.menuGroup); if (g) groups.push(g); }
+        const els = groups.flatMap(g => Array.from(g.querySelectorAll('button, .roomlist a.blocklink')));
+        const p = pane('MENU', els);
+        if (p) { p.wrap = true; return { key: `menu|${p.items.length}`, panes: { MENU: p }, controls: {}, room: null, menu }; }
+      }
       return { key: null, panes: {}, controls: {}, room: null };
     }
 
@@ -343,6 +361,49 @@ export function createAdapter(options = {}) {
   const selectSwitch = () => clickControl(SELECTORS.selectSwitch);
   const selectMove = () => clickControl(SELECTORS.selectMove);
   const skipTurn = () => clickControl(SELECTORS.skipTurn);
+  /**
+   * Close the current Showdown tab (room). Uses the client's leaveRoom, which
+   * runs the room's own requestLeave() — for a live battle that opens the
+   * client's Forfeit popup instead of silently leaving. The main menu can't
+   * be closed. Fallback: click the tab's × button.
+   */
+  function closeTab() {
+    if (isTyping()) return false;
+    const app = win.app;
+    const cur = app && app.curRoom;
+    if (!cur || !cur.id) return false;
+    if (typeof app.leaveRoom === 'function') { app.leaveRoom(cur.id); return true; }
+    const btn = Array.from(doc.querySelectorAll(SELECTORS.roomTabClose)).find(b => b.value === cur.id);
+    if (btn) { btn.click(); return true; }
+    return false;
+  }
+
+  /**
+   * Focus the previous (-1) / next (+1) tab, wrapping. Walks the top tab bar
+   * (Home, Teambuilder, Ladder, battles, chats…) rather than app.roomList,
+   * which only holds chat/battle rooms. Skips the "+" (rooms) tab.
+   */
+  function switchTab(dir) {
+    if (isTyping()) return false;
+    const app = win.app;
+    if (!app || typeof app.focusRoom !== 'function') return false;
+    const root = (app.root || '/');
+    const ids = [];
+    for (const a of doc.querySelectorAll(SELECTORS.roomTabs)) {
+      const href = a.getAttribute('href') || '';
+      const id = href.startsWith(root) ? href.slice(root.length) : href.replace(/^\//, '');
+      if (id === 'rooms' || ids.includes(id)) continue;
+      ids.push(id);
+    }
+    if (ids.length < 2) return false;
+    const curId = app.curRoom ? app.curRoom.id : '';
+    let idx = ids.indexOf(curId);
+    if (idx < 0) idx = 0;
+    const next = ids[((idx + dir) % ids.length + ids.length) % ids.length];
+    app.focusRoom(next);
+    return true;
+  }
+
   /** Close the topmost popup: its own Close button if it has one, else the client's dismissPopups(). */
   function closePopup() {
     if (isTyping()) return false;
@@ -546,7 +607,7 @@ export function createAdapter(options = {}) {
   }
 
   return {
-    readScreen, activate, back, cancel, gimmick, selectSwitch, selectMove, skipTurn, goToEnd, forfeit, closePopup, battleEnded,
+    readScreen, activate, back, cancel, gimmick, selectSwitch, selectMove, skipTurn, goToEnd, forfeit, closePopup, battleEnded, closeTab, switchTab,
     setCursor, clearCursor, paintHints, clearHints, setStatus, onControlsChanged, isTyping, getRoom, getControls,
   };
 }

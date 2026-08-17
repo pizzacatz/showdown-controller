@@ -29,6 +29,8 @@
 //         | { type: 'selectSwitch' } | { type: 'selectMove' }
 //         | { type: 'skipTurn' } | { type: 'goToEnd' }   (playback controls)
 //         | { type: 'closePopup' }
+//         | { type: 'closeTab' } | { type: 'prevTab' } | { type: 'nextTab' }
+//   Pane option `wrap: true` (main menu) makes UP/DOWN wrap at the ends.
 
 // PLAYBACK = pause / first turn / prev turn / skip turn / skip to end buttons
 // (shown while the battle animation lags the log, and after the battle).
@@ -125,7 +127,7 @@ export function sync(state, screen) {
 }
 
 /** Grid movement over a flat list with a column count. Returns new index or the same index. */
-export function move(items, columns, index, dir) {
+export function move(items, columns, index, dir, wrap = false) {
   const n = items.length;
   if (!n) return index;
   const c = Math.max(1, Math.min(columns | 0 || n, n));
@@ -133,6 +135,19 @@ export function move(items, columns, index, dir) {
   const lastRow = row(n - 1);
   const rowStart = r => r * c;
   const rowEnd = r => Math.min(n - 1, r * c + c - 1);
+
+  if (wrap && (dir === 'UP' || dir === 'DOWN')) {
+    // Wrap-around lists (main menu): step row by row, skipping placeholders,
+    // and jump to the other end when running off the top/bottom.
+    const col = index - rowStart(row(index));
+    const rowsN = lastRow + 1;
+    for (let k = 1; k <= rowsN; k++) {
+      const r = (((row(index) + (dir === 'DOWN' ? k : -k)) % rowsN) + rowsN) % rowsN;
+      const i = Math.min(rowStart(r) + col, rowEnd(r));
+      if (!items[i].skip) return i;
+    }
+    return index;
+  }
 
   if (dir === 'LEFT' || dir === 'RIGHT') {
     // Row-bounded: clamp at the row edge instead of wrapping into the next
@@ -180,7 +195,7 @@ export function reduce(state, event, screen) {
   switch (type) {
     case 'UP': case 'DOWN': case 'LEFT': case 'RIGHT': {
       if (!items.length) return none;
-      const index = move(items, columnsOf(paneData), state.index, type);
+      const index = move(items, columnsOf(paneData), state.index, type, !!paneData.wrap);
       if (index === state.index) {
         // Moves and party are stacked on the desktop layout: ↓ off the bottom
         // of the moves enters the party list, ↑ off its top returns.
@@ -223,6 +238,9 @@ export function reduce(state, event, screen) {
       return controls.skipTurn ? { state, action: { type: 'skipTurn' } } : none;
     case 'SKIP_TO_END':
       return controls.goToEnd ? { state, action: { type: 'goToEnd' } } : none;
+    case 'CLOSE_TAB': return { state, action: { type: 'closeTab' } };
+    case 'PREV_TAB': return { state, action: { type: 'prevTab' } };
+    case 'NEXT_TAB': return { state, action: { type: 'nextTab' } };
     default:
       return none;
   }

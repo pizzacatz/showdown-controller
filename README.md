@@ -39,6 +39,8 @@ support can capture it; Chrome is the most reliable).
 | **Y** | Skip to end (same). The playback buttons are also cursor-selectable with A. |
 | **Select** | Forfeit — press once to arm (the status pill turns red), press again within 4 s to concede; any other button cancels. In a Bo3 this concedes the current game. An always-on `(Select)` tag sits by the Timer button (or on QoL Battle Tools' Forfeit button if you run that script). |
 | **Start** | Turn the whole controller layer on/off |
+| **RT** | Close the current Showdown tab (Teambuilder, a finished battle, a chat…). Never closes Home; on a live battle it opens Showdown's own forfeit confirmation instead of leaving silently. |
+| **L3 / R3** | Previous / next tab (wraps) |
 | `Ctrl+Shift+G` | Same toggle, from the keyboard |
 
 **Remapping:** click the 🎮 status pill (bottom-right) → *Rebind* on any row →
@@ -49,9 +51,13 @@ table above.
 Team preview, move select, doubles target select, forced switches, the
 "waiting for opponent" state, the playback buttons and the end-of-battle
 screen (Instant replay / Main menu / Rematch) are all covered. Outside a
-battle the **main menu** buttons (format, team, Battle!, Teambuilder, …) are
-navigable too, and any Showdown **popup** (format picker, team picker,
-confirmations) takes over the cursor while it's open — **B** closes it.
+battle the **main menu's battle group** is navigable — format selector, any
+injected quick-select buttons (e.g. Ghost Clicker's Reg M-B / Bo3), team
+selector, *Battle!* / *Cancel*, and while you have games running the links
+back to them — with wrap-around at the top and bottom. Teambuilder / Ladder /
+Watch / Resources are deliberately not on the cursor path. Any Showdown
+**popup** (format picker, team picker, confirmations) takes over the cursor
+while it's open — **B** closes it.
 Disabled moves and active/fainted party slots can be highlighted but never
 activated. Upload/download-replay buttons are deliberately not selectable.
 
@@ -96,7 +102,7 @@ a browser.
 
 ```sh
 npm install
-npm test          # unit tests (76)
+npm test          # unit tests (79)
 npm run build     # dist/showdown-gamepad.user.js
 npm run recon -- --script dist/showdown-gamepad.user.js   # e2e vs a LOCAL server
 ```

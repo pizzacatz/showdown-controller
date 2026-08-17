@@ -215,24 +215,44 @@ describe('acting', () => {
     expect(Object.keys(a.readScreen().panes).sort()).toEqual(['MOVE', 'SWITCH']);
   });
 
-  it('main menu buttons form a MENU pane when the main menu is the current room', () => {
+  it('main menu: only the battle group (format, injected quick-select, team, Battle!) forms the MENU pane, wrapping', () => {
     document.body.innerHTML = `<div class="ps-room" id="room-"><div class="mainmenu">
-      <div class="menugroup"><p><button class="select formatselect" name="format" value="gen9vgc">VGC</button></p><p><button class="select teamselect" name="team" value="0">Team</button></p><p><button class="button mainmenu1 big" name="search">Battle!</button></p></div>
+      <div class="menugroup"><form class="battleform"><p><button class="select formatselect" name="format" value="gen9vgc">VGC</button></p><p><button class="button" name="ghost-regmb">Reg M-B</button></p><p><button class="select teamselect" name="team" value="0">Team</button></p><p><button class="button mainmenu1 big" name="search">Battle!</button></p></form></div>
       <div class="menugroup"><p><button class="button mainmenu2" name="joinRoom" value="teambuilder">Teambuilder</button></p><p><button class="button mainmenu3" name="joinRoom" value="ladder">Ladder</button></p></div>
     </div></div><div class="ps-room" id="room-battle-x-1" style="display:none"><div class="battle-controls"><div class="movecontrols"><div class="movemenu"><button class="movebutton" name="chooseMove" value="1">Move</button></div></div></div></div>`;
     const a = adapter();
     const s = a.readScreen();
     expect(Object.keys(s.panes)).toEqual(['MENU']);
-    expect(s.panes.MENU.items.map(i => i.id)).toEqual(['MENU:format:gen9vgc:VGC', 'MENU:team:0:Team', 'MENU:search::Battle!', 'MENU:joinRoom:teambuilder:Teambuilder', 'MENU:joinRoom:ladder:Ladder']);
+    expect(s.panes.MENU.items.map(i => i.id)).toEqual(['MENU:format:gen9vgc:VGC', 'MENU:ghost-regmb::Reg M-B', 'MENU:team:0:Team', 'MENU:search::Battle!']);
     expect(s.panes.MENU.columns).toBe(1);
+    expect(s.panes.MENU.wrap).toBe(true);
     const clicked = [];
     document.body.addEventListener('click', e => clicked.push(e.target.name), { once: true });
-    expect(a.activate('MENU', 2, 'MENU:search::Battle!')).toBe(true);
+    expect(a.activate('MENU', 3, 'MENU:search::Battle!')).toBe(true);
     expect(clicked).toEqual(['search']);
     // Battle room becomes current → menu no longer read
     document.getElementById('room-').style.display = 'none';
     document.getElementById('room-battle-x-1').style.display = '';
     expect(Object.keys(a.readScreen().panes)).toEqual(['MOVE']);
+  });
+
+  it('closeTab leaves the current room via the client (never the main menu); switchTab walks the tab bar with wrap', () => {
+    document.body.innerHTML = `<div class="maintabbar"><div class="inner"><ul><li><a class="roomtab button" href="/">Home</a></li><li><a class="roomtab button cur" href="/teambuilder">Teambuilder</a></li><li><a class="roomtab button" href="/battle-gen9ou-1">battle</a></li><li><a class="roomtab button" href="/rooms">+</a></li></ul></div></div><div class="ps-room" id="room-"></div>`;
+    const a = adapter();
+    const calls = [];
+    window.app = { root: '/', curRoom: { id: 'teambuilder' }, leaveRoom: id => calls.push(['leave', id]), focusRoom: id => calls.push(['focus', id]) };
+    expect(a.closeTab()).toBe(true);
+    expect(a.switchTab(1)).toBe(true);
+    expect(a.switchTab(-1)).toBe(true);
+    window.app.curRoom = { id: 'battle-gen9ou-1' };
+    expect(a.switchTab(1)).toBe(true);           // wraps past "+" to Home
+    window.app.curRoom = { id: '' };
+    expect(a.switchTab(-1)).toBe(true);          // wraps to the last real tab
+    expect(a.closeTab()).toBe(false);
+    expect(calls).toEqual([['leave', 'teambuilder'], ['focus', 'battle-gen9ou-1'], ['focus', ''], ['focus', ''], ['focus', 'battle-gen9ou-1']]);
+    delete window.app;
+    expect(a.closeTab()).toBe(false);
+    expect(a.switchTab(1)).toBe(false);
   });
 
   it('forfeit sends /forfeit to the current room through the client API', () => {

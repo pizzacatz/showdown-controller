@@ -40,7 +40,7 @@ export function start(win = window) {
     else if (state.pane === 'WAIT') adapter.setStatus('on', `🎮 Gamepad ON — waiting for opponent (${L('BACK')} = cancel) · ${forfeitHint()}`);
     else if (state.pane === 'INACTIVE') adapter.setStatus('on', `🎮 Gamepad ON — nothing selectable on screen · ${forfeitHint()}`);
     else if (state.pane === 'POPUP') adapter.setStatus('on', `🎮 Gamepad ON — popup (${L('BACK')} = close)`);
-    else if (state.pane === 'MENU') adapter.setStatus('on', '🎮 Gamepad ON — main menu');
+    else if (state.pane === 'MENU') adapter.setStatus('on', `🎮 Gamepad ON — main menu · (${L('CLOSE_TAB')}) close tab`);
     else adapter.setStatus('on', `🎮 Gamepad ON — ${state.pane.toLowerCase().replace('_', ' ')} · ${forfeitHint()}`);
   }
 
@@ -86,6 +86,9 @@ export function start(win = window) {
       case 'skipTurn': adapter.skipTurn(); break;
       case 'goToEnd': adapter.goToEnd(); break;
       case 'closePopup': adapter.closePopup(); break;
+      case 'closeTab': adapter.closeTab(); break;
+      case 'prevTab': adapter.switchTab(-1); break;
+      case 'nextTab': adapter.switchTab(1); break;
       default: break;
     }
   }

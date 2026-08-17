@@ -65,7 +65,7 @@ main menu 1 column, popups whatever their layout is.
 | playback lagging | `PLAYBACK` (`skipTurn`, `goToEnd`; after the battle also `pause`/`instantReplay`/`rewindTurn`) | — |
 | battle over (players) | `PLAYBACK` grid: row 1 `instantReplay` (+ `a.replayDownloadButton`, not selectable), row 2 `closeAndMainMenu` `closeAndRematch` | `saveReplay` not selectable |
 | any `.ps-popup` (format/team picker, confirmations) | `POPUP` — every button in the topmost popup; modal, outranks all battle panes | `button[name=close]` or `app.dismissPopups()` on B |
-| main menu (room id `''`, element `#room-`) | `MENU` — `.mainmenu button` (format/team selectors, `search`, `joinRoom …`, injected buttons) | — |
+| main menu (room id `''`, element `#room-`) | `MENU` (wrap-around) — buttons of every `.menugroup` holding a `form.battleform`: the search group (format/team selectors, injected quick-select buttons, `search`/`cancelSearch`) and, while games run, the "Games" group the client swaps in (`.roomlist a.blocklink` links + `showSearchGroup`). Teambuilder/Ladder/… groups excluded by request. | — |
 
 `chooseDisabled` party buttons (active/fainted mons) are *not* `disabled`
 attributes — clicking them opens a Showdown popup — so the adapter marks them
@@ -83,6 +83,12 @@ attributes — clicking them opens a Showdown popup — so the adapter marks the
   *behind* them needs `z-index: -1` inside a stacking context on
   `.battle-controls` (`isolation: isolate`); otherwise it paints on top of the
   buttons or under the controls' background. `body.dark` is the dark-theme hook.
+- **Tabs.** `app.roomList`/`sideRoomList` hold only chat/battle rooms; Home,
+  Teambuilder, Ladder, Resources are separate. To step through *all* tabs
+  walk `.maintabbar a.roomtab[href]` (DOM order = visual order, skip
+  `/rooms`) and `app.focusRoom(id)`. Closing = `app.leaveRoom(id)`, which
+  runs the room's `requestLeave()` — a live battle opens the client's Forfeit
+  popup rather than leaving.
 - **Never `.focus()` a button.** The client binds ←/→ (switch room) and
   Shift+←/→ (move room) on `keydown` when focus is on a button or empty
   textarea. The cursor is a CSS class (`sgp-cursor`), not focus.

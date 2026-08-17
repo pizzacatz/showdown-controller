@@ -37,7 +37,7 @@ describe('settings panel', () => {
     s.open();
     const panel = document.getElementById(PANEL_ID);
     expect(panel).toBeTruthy();
-    expect(panel.querySelectorAll('tr[data-intent]').length).toBe(12);
+    expect(panel.querySelectorAll('tr[data-intent]').length).toBe(15);
     panel.querySelector('button[data-rebind="GIMMICK"]').click();
     expect(s.isCapturing()).toBe(true);
     expect(s.onRawButton(BUTTON.LT)).toBe(true);

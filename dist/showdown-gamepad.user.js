@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Showdown Gamepad
 // @namespace    https://github.com/pizzacatz/showdown-controller
-// @version      0.5.0
+// @version      0.6.0
 // @description  Play Pokémon Showdown battles with an XInput controller: D-pad/stick cursor, A confirm, B back, X switch menu, Y tera/gimmick. Mouse and keyboard keep working.
 // @author       pizzacatz
 // @license      MIT
@@ -44,6 +44,9 @@
     [BUTTON.Y]: "SKIP_TO_END",
     [BUTTON.BACK]: "FORFEIT",
     [BUTTON.START]: "TOGGLE_LAYER",
+    [BUTTON.RT]: "CLOSE_TAB",
+    [BUTTON.L3]: "PREV_TAB",
+    [BUTTON.R3]: "NEXT_TAB",
     [BUTTON.UP]: "UP",
     [BUTTON.DOWN]: "DOWN",
     [BUTTON.LEFT]: "LEFT",
@@ -58,6 +61,9 @@
     { id: "SKIP_TO_END", label: "Skip to end" },
     { id: "FORFEIT", label: "Forfeit (press twice)" },
     { id: "TOGGLE_LAYER", label: "Controller layer on/off" },
+    { id: "CLOSE_TAB", label: "Close current Showdown tab" },
+    { id: "PREV_TAB", label: "Previous tab" },
+    { id: "NEXT_TAB", label: "Next tab" },
     { id: "UP", label: "Cursor up" },
     { id: "DOWN", label: "Cursor down" },
     { id: "LEFT", label: "Cursor left" },
@@ -287,7 +293,7 @@
       memory
     };
   }
-  function move(items, columns, index, dir) {
+  function move(items, columns, index, dir, wrap = false) {
     const n = items.length;
     if (!n) return index;
     const c = Math.max(1, Math.min(columns | 0 || n, n));
@@ -295,6 +301,16 @@
     const lastRow = row(n - 1);
     const rowStart = (r) => r * c;
     const rowEnd = (r) => Math.min(n - 1, r * c + c - 1);
+    if (wrap && (dir === "UP" || dir === "DOWN")) {
+      const col = index - rowStart(row(index));
+      const rowsN = lastRow + 1;
+      for (let k = 1; k <= rowsN; k++) {
+        const r = ((row(index) + (dir === "DOWN" ? k : -k)) % rowsN + rowsN) % rowsN;
+        const i = Math.min(rowStart(r) + col, rowEnd(r));
+        if (!items[i].skip) return i;
+      }
+      return index;
+    }
     if (dir === "LEFT" || dir === "RIGHT") {
       const step = dir === "LEFT" ? -1 : 1;
       const r = row(index);
@@ -337,7 +353,7 @@
       case "LEFT":
       case "RIGHT": {
         if (!items.length) return none;
-        const index = move(items, columnsOf(paneData), state.index, type);
+        const index = move(items, columnsOf(paneData), state.index, type, !!paneData.wrap);
         if (index === state.index) {
           const avail = availablePanes(screen);
           if (type === "DOWN" && pane === "MOVE" && avail.includes("SWITCH")) {
@@ -377,6 +393,12 @@
         return controls.skipTurn ? { state, action: { type: "skipTurn" } } : none;
       case "SKIP_TO_END":
         return controls.goToEnd ? { state, action: { type: "goToEnd" } } : none;
+      case "CLOSE_TAB":
+        return { state, action: { type: "closeTab" } };
+      case "PREV_TAB":
+        return { state, action: { type: "prevTab" } };
+      case "NEXT_TAB":
+        return { state, action: { type: "nextTab" } };
       default:
         return none;
     }
@@ -420,6 +442,13 @@
     // Main menu (room id '' → element #room-). Includes injected buttons (Ghost Clicker) since they are plain buttons too.
     mainMenu: ".mainmenu",
     mainMenuRoom: "#room-",
+    // Only the battle group of the main menu: format selector, injected quick-
+    // select buttons (Ghost Clicker), team selector, Battle! / Cancel search.
+    mainMenuBattleForm: "form.battleform",
+    menuGroup: ".menugroup",
+    roomTabClose: 'button[name="closeRoom"]',
+    roomTabs: ".maintabbar a.roomtab[href]",
+    // one per open tab, DOM order = visual order; .cur = current
     headings: { MOVE: ".moveselect button", SWITCH: ".switchselect button", TEAM: ".switchselect button" },
     qolForfeit: 'button[data-qol="forfeit"]'
     // QoL Battle Tools' arm-then-confirm forfeit button, if installed
@@ -589,8 +618,23 @@
       const controls = room && room.querySelector(SELECTORS.controls);
       if (!controls) {
         const menu = getMainMenu();
-        const p = menu && pane("MENU", Array.from(menu.querySelectorAll("button")));
-        if (p) return { key: `menu|${p.items.length}`, panes: { MENU: p }, controls: {}, room: null, menu };
+        if (menu) {
+          const groups = [];
+          for (const form of menu.querySelectorAll(SELECTORS.mainMenuBattleForm)) {
+            const g = form.closest(SELECTORS.menuGroup) || form;
+            if (!groups.includes(g)) groups.push(g);
+          }
+          if (!groups.length) {
+            const g = menu.querySelector(SELECTORS.menuGroup);
+            if (g) groups.push(g);
+          }
+          const els = groups.flatMap((g) => Array.from(g.querySelectorAll("button, .roomlist a.blocklink")));
+          const p = pane("MENU", els);
+          if (p) {
+            p.wrap = true;
+            return { key: `menu|${p.items.length}`, panes: { MENU: p }, controls: {}, room: null, menu };
+          }
+        }
         return { key: null, panes: {}, controls: {}, room: null };
       }
       const panes = {};
@@ -678,6 +722,42 @@
     const selectSwitch = () => clickControl(SELECTORS.selectSwitch);
     const selectMove = () => clickControl(SELECTORS.selectMove);
     const skipTurn = () => clickControl(SELECTORS.skipTurn);
+    function closeTab() {
+      if (isTyping()) return false;
+      const app = win.app;
+      const cur = app && app.curRoom;
+      if (!cur || !cur.id) return false;
+      if (typeof app.leaveRoom === "function") {
+        app.leaveRoom(cur.id);
+        return true;
+      }
+      const btn = Array.from(doc.querySelectorAll(SELECTORS.roomTabClose)).find((b) => b.value === cur.id);
+      if (btn) {
+        btn.click();
+        return true;
+      }
+      return false;
+    }
+    function switchTab(dir) {
+      if (isTyping()) return false;
+      const app = win.app;
+      if (!app || typeof app.focusRoom !== "function") return false;
+      const root = app.root || "/";
+      const ids = [];
+      for (const a of doc.querySelectorAll(SELECTORS.roomTabs)) {
+        const href = a.getAttribute("href") || "";
+        const id = href.startsWith(root) ? href.slice(root.length) : href.replace(/^\//, "");
+        if (id === "rooms" || ids.includes(id)) continue;
+        ids.push(id);
+      }
+      if (ids.length < 2) return false;
+      const curId = app.curRoom ? app.curRoom.id : "";
+      let idx = ids.indexOf(curId);
+      if (idx < 0) idx = 0;
+      const next = ids[((idx + dir) % ids.length + ids.length) % ids.length];
+      app.focusRoom(next);
+      return true;
+    }
     function closePopup() {
       if (isTyping()) return false;
       const popup = getPopup();
@@ -893,6 +973,8 @@
       forfeit,
       closePopup,
       battleEnded,
+      closeTab,
+      switchTab,
       setCursor,
       clearCursor,
       paintHints,
@@ -1092,7 +1174,7 @@
       else if (state.pane === "WAIT") adapter.setStatus("on", `\u{1F3AE} Gamepad ON \u2014 waiting for opponent (${L("BACK")} = cancel) \xB7 ${forfeitHint()}`);
       else if (state.pane === "INACTIVE") adapter.setStatus("on", `\u{1F3AE} Gamepad ON \u2014 nothing selectable on screen \xB7 ${forfeitHint()}`);
       else if (state.pane === "POPUP") adapter.setStatus("on", `\u{1F3AE} Gamepad ON \u2014 popup (${L("BACK")} = close)`);
-      else if (state.pane === "MENU") adapter.setStatus("on", "\u{1F3AE} Gamepad ON \u2014 main menu");
+      else if (state.pane === "MENU") adapter.setStatus("on", `\u{1F3AE} Gamepad ON \u2014 main menu \xB7 (${L("CLOSE_TAB")}) close tab`);
       else adapter.setStatus("on", `\u{1F3AE} Gamepad ON \u2014 ${state.pane.toLowerCase().replace("_", " ")} \xB7 ${forfeitHint()}`);
     }
     function hints() {
@@ -1159,6 +1241,15 @@
           break;
         case "closePopup":
           adapter.closePopup();
+          break;
+        case "closeTab":
+          adapter.closeTab();
+          break;
+        case "prevTab":
+          adapter.switchTab(-1);
+          break;
+        case "nextTab":
+          adapter.switchTab(1);
           break;
         default:
           break;
