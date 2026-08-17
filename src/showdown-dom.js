@@ -54,7 +54,7 @@ export const CURSOR_CSS = `
    an overlay sized to the union of the pane's buttons. */
 .${PANE_CLASS} {
   position: absolute; pointer-events: none; z-index: 1;
-  border: 1px solid rgba(255, 140, 0, 0.2); border-radius: 6px; box-sizing: border-box;
+  border: 1px solid rgba(255, 140, 0, 0.8); border-radius: 6px; box-sizing: border-box;
 }
 /* Standalone forfeit hint (top-right of the controls) when no forfeit button exists to attach to. */
 .${HINT_CLASS}.sgp-hint-forfeit { position: absolute; right: 78px; top: 9px; margin: 0; z-index: 3; }
@@ -381,7 +381,7 @@ export function createAdapter(options = {}) {
       const room = getRoom();
       const qol = room && Array.from(room.querySelectorAll(SELECTORS.qolForfeit)).find(isVisible);
       forfeitHost = qol || controls;
-      targets.push([forfeitHost, labels.forfeit, forfeitHost === controls ? 'sgp-hint-forfeit' : '', 'Forfeit']);
+      targets.push([forfeitHost, labels.forfeit, forfeitHost === controls ? 'sgp-hint-forfeit' : '']);
     }
     const wanted = new Set();
     for (const [host, label, extraClass = '', suffix = ''] of targets) {

@@ -312,7 +312,7 @@ async function main() {
       badge = await badgeOf();
       check(/\(Select\) forfeit/.test(badge?.text || ''), `pill always shows the forfeit hint (${badge?.text})`);
       const fh = await inRoom(A, r => r.querySelector('.battle-controls .sgp-hint-forfeit')?.textContent);
-      check(fh === '(Select) Forfeit', `forfeit hint tag is inside the battle controls (${fh})`);
+      check(fh === '(Select)', `forfeit hint tag is inside the battle controls (${fh})`);
       // Settings panel: click the pill, rebind GIMMICK to LT via a raw press, hint follows
       await A.evaluate(() => document.getElementById('sgp-status').click());
       let panel = await A.evaluate(() => !!document.getElementById('sgp-settings'));
