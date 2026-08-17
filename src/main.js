@@ -31,14 +31,16 @@ export function start(win = window) {
   let forfeitTimer = null;
 
   const L = intent => settings.labelFor(intent);
-  const forfeitHint = () => `(${L('FORFEIT')}) forfeit`;
+  const forfeitHint = () => (adapter.battleEnded() ? 'battle over' : `(${L('FORFEIT')}) forfeit`);
 
   function status() {
     if (forfeitArmedAt) { adapter.setStatus('off', `🎮 FORFEIT armed — press ${L('FORFEIT')} again to concede, anything else to cancel`); return; }
     if (!padSeen) adapter.setStatus('waiting', '🎮 Gamepad: press any button on the controller · click here for bindings');
     else if (!enabled) adapter.setStatus('off', `🎮 Gamepad OFF — ${L('TOGGLE_LAYER')} or Ctrl+Shift+G to enable`);
     else if (state.pane === 'WAIT') adapter.setStatus('on', `🎮 Gamepad ON — waiting for opponent (${L('BACK')} = cancel) · ${forfeitHint()}`);
-    else if (state.pane === 'INACTIVE') adapter.setStatus('on', `🎮 Gamepad ON — no battle controls on screen · ${forfeitHint()}`);
+    else if (state.pane === 'INACTIVE') adapter.setStatus('on', `🎮 Gamepad ON — nothing selectable on screen · ${forfeitHint()}`);
+    else if (state.pane === 'POPUP') adapter.setStatus('on', `🎮 Gamepad ON — popup (${L('BACK')} = close)`);
+    else if (state.pane === 'MENU') adapter.setStatus('on', '🎮 Gamepad ON — main menu');
     else adapter.setStatus('on', `🎮 Gamepad ON — ${state.pane.toLowerCase().replace('_', ' ')} · ${forfeitHint()}`);
   }
 
@@ -83,6 +85,7 @@ export function start(win = window) {
       case 'selectMove': adapter.selectMove(); break;
       case 'skipTurn': adapter.skipTurn(); break;
       case 'goToEnd': adapter.goToEnd(); break;
+      case 'closePopup': adapter.closePopup(); break;
       default: break;
     }
   }
@@ -93,7 +96,7 @@ export function start(win = window) {
   }
 
   function handleForfeit() {
-    if (!adapter.getRoom()) { dbg('forfeit: no battle room'); return; }
+    if (!adapter.getRoom() || adapter.battleEnded()) { dbg('forfeit: no live battle'); return; }
     const now = win.performance.now();
     if (forfeitArmedAt && now - forfeitArmedAt <= CONFIG.forfeitConfirmMs) {
       disarmForfeit();
@@ -182,6 +185,7 @@ export function start(win = window) {
         panes: Object.fromEntries(Object.entries(screen.panes).map(([k, v]) => [k, { n: v.items.length, columns: v.columns }])),
         controls: screen.controls,
         item: p && p.items[state.index] ? { id: p.items[state.index].id, disabled: p.items[state.index].disabled } : null,
+        ids: p ? p.items.map(i => i.id + (i.disabled ? '!' : '') + (i.skip ? '*' : '')) : [],
       };
     },
     resync,

@@ -26,7 +26,15 @@ export const SELECTORS = {
   skipTurn: 'button[name="skipTurn"]',
   goToEnd: 'button[name="goToEnd"]',
   timer: '.timerbutton, .timer',
-  playback: 'button[name="pause"], button[name="play"], button[name="instantReplay"], button[name="rewindTurn"], button[name="skipTurn"], button[name="goToEnd"]',
+  // Playback + end-of-battle buttons. Upload/download replay are left out on
+  // purpose (outward-facing); QoL Battle Tools already automates them.
+  playback: 'button[name="pause"], button[name="play"], button[name="instantReplay"], button[name="rewindTurn"], button[name="skipTurn"], button[name="goToEnd"], button[name="closeAndMainMenu"], button[name="closeAndRematch"]',
+  // Modal popups (format picker, team picker, confirmations, errors). Topmost = last in DOM.
+  popup: '.ps-popup',
+  popupClose: 'button[name="close"]',
+  // Main menu (room id '' → element #room-). Includes injected buttons (Ghost Clicker) since they are plain buttons too.
+  mainMenu: '.mainmenu',
+  mainMenuRoom: '#room-',
   headings: { MOVE: '.moveselect button', SWITCH: '.switchselect button', TEAM: '.switchselect button' },
   qolForfeit: 'button[data-qol="forfeit"]', // QoL Battle Tools' arm-then-confirm forfeit button, if installed
 };
@@ -158,38 +166,74 @@ export function createAdapter(options = {}) {
     let id;
     if (kind === 'MOVE') id = `move:${el.dataset.move || text || i}`;
     else if (kind === 'PLAYBACK') id = `PLAYBACK:${name || text || i}`;
+    else if (kind === 'POPUP' || kind === 'MENU') id = `${kind}:${name || 'x'}:${value ?? ''}:${text || i}`;
     else if (kind === 'TARGET' || kind === 'SWITCH_TARGET') id = `${kind}:${name || 'x'}:${value ?? i}`;
     else id = `${kind}:${text || (name + ':' + value) || i}`;
     return { id, el, disabled: disabledAttr || disabledClass, skip };
   }
 
-  /** Column count from geometry: number of items sharing the first row's top. */
-  function columnsFor(els) {
-    if (!els.length) return 0;
-    const tops = els.map(el => { const r = rectOf(el); return r ? Math.round(r.top) : 0; });
-    if (tops.every(t => t === 0)) return els.length; // no layout info (jsdom / hidden)
-    const rows = [];
-    for (const t of tops) {
-      const row = rows.find(r => Math.abs(r - t) <= 4);
-      if (row === undefined) rows.push(t);
-    }
-    rows.sort((a, b) => a - b);
-    let best = 0;
-    for (const r of rows) best = Math.max(best, tops.filter(t => Math.abs(t - r) <= 4).length);
-    return best;
-  }
-
+  /**
+   * Build a rectangular grid from geometry: group visible elements into rows
+   * by their top edge (4px tolerance), order rows top→bottom and cells
+   * left→right, pad short rows with `skip` placeholders so the flat list is
+   * row-major with a single column count. Without layout info (jsdom,
+   * hidden) it degrades to one row in DOM order.
+   */
   function pane(kind, els) {
     const visible = els.filter(isVisible);
     if (!visible.length) return null;
-    return { items: visible.map((el, i) => itemOf(el, i, kind)), columns: columnsFor(visible) };
+    const rects = visible.map(el => rectOf(el) || { top: 0, left: 0, width: 0, height: 0 });
+    if (rects.every(r => !r.top && !r.left && !r.width)) {
+      return { items: visible.map((el, i) => itemOf(el, i, kind)), columns: visible.length };
+    }
+    const rows = [];
+    visible.forEach((el, i) => {
+      const r = rects[i];
+      let row = rows.find(rw => Math.abs(rw.top - r.top) <= 4);
+      if (!row) { row = { top: r.top, cells: [] }; rows.push(row); }
+      row.cells.push({ el, left: r.left, i });
+    });
+    rows.sort((a, b) => a.top - b.top);
+    rows.forEach(rw => rw.cells.sort((a, b) => a.left - b.left || a.i - b.i));
+    const columns = Math.max(...rows.map(rw => rw.cells.length));
+    const items = [];
+    rows.forEach((rw, ri) => {
+      rw.cells.forEach(c => items.push(itemOf(c.el, c.i, kind)));
+      for (let c = rw.cells.length; c < columns; c++) items.push({ id: `${kind}:pad:${ri}:${c}`, el: null, disabled: true, skip: true });
+    });
+    return { items, columns };
+  }
+
+  function getPopup() {
+    const pops = Array.from(doc.querySelectorAll(SELECTORS.popup)).filter(isVisible);
+    return pops.length ? pops[pops.length - 1] : null;
+  }
+
+  function getMainMenu() {
+    const app = win.app;
+    let roomEl = null;
+    if (app && app.curRoom && app.curRoom.$el && app.curRoom.$el[0]) roomEl = app.curRoom.$el[0];
+    else { const el = doc.querySelector(SELECTORS.mainMenuRoom); if (el && el.style.display !== 'none') roomEl = el; }
+    if (!roomEl || (roomEl.id && roomEl.id !== 'room-')) return null;
+    return roomEl.querySelector(SELECTORS.mainMenu);
   }
 
   function readScreen() {
+    // Modal popup on top of everything: only its buttons are reachable.
+    const popup = getPopup();
+    if (popup) {
+      const p = pane('POPUP', Array.from(popup.querySelectorAll('button')));
+      return { key: `popup|${popup.id || ''}|${p ? p.items.length : 0}`, panes: p ? { POPUP: p } : {}, controls: { closePopup: true }, room: null, popup };
+    }
     const room = getRoom();
     const controls = room && room.querySelector(SELECTORS.controls);
-    const empty = { key: null, panes: {}, controls: {}, room: null };
-    if (!controls) return empty;
+    if (!controls) {
+      // Main menu?
+      const menu = getMainMenu();
+      const p = menu && pane('MENU', Array.from(menu.querySelectorAll('button')));
+      if (p) return { key: `menu|${p.items.length}`, panes: { MENU: p }, controls: {}, room: null, menu };
+      return { key: null, panes: {}, controls: {}, room: null };
+    }
 
     const panes = {};
     const q = sel => Array.from(controls.querySelectorAll(sel));
@@ -281,7 +325,7 @@ export function createAdapter(options = {}) {
     const screen = readScreen();
     const p = screen.panes[paneName];
     const item = p && p.items[index];
-    if (!item || item.disabled || item.skip) return false;
+    if (!item || item.disabled || item.skip || !item.el) return false;
     if (id != null && item.id !== id) return false;
     return clickEl(item.el);
   }
@@ -299,7 +343,29 @@ export function createAdapter(options = {}) {
   const selectSwitch = () => clickControl(SELECTORS.selectSwitch);
   const selectMove = () => clickControl(SELECTORS.selectMove);
   const skipTurn = () => clickControl(SELECTORS.skipTurn);
+  /** Close the topmost popup: its own Close button if it has one, else the client's dismissPopups(). */
+  function closePopup() {
+    if (isTyping()) return false;
+    const popup = getPopup();
+    if (!popup) return false;
+    const btn = Array.from(popup.querySelectorAll(SELECTORS.popupClose)).find(isVisible);
+    if (btn) { btn.click(); return true; }
+    const app = win.app;
+    if (app && typeof app.dismissPopups === 'function') { app.dismissPopups(); return true; }
+    return false;
+  }
   const goToEnd = () => clickControl(SELECTORS.goToEnd);
+
+  /** True when the current battle room's battle is over (or there is no battle room). */
+  function battleEnded() {
+    const room = getRoom();
+    if (!room) return true;
+    const app = win.app;
+    const r = app && app.rooms && app.rooms[room.id.replace(/^room-/, '')];
+    if (r && (r.battleEnded || (r.battle && r.battle.ended))) return true;
+    // Without the client API: end-of-battle controls are a reliable signal.
+    return !!room.querySelector('button[name="closeAndMainMenu"], button[name="closeAndRematch"]');
+  }
 
   /**
    * Forfeit the CURRENT battle room via the client's room API (same path the
@@ -365,11 +431,11 @@ export function createAdapter(options = {}) {
     const screen = readScreen();
     const p = screen.panes[paneName];
     const item = p && p.items[index];
-    if (!item) return false;
+    if (!item || !item.el) return false;
     item.el.classList.add(CURSOR_CLASS);
     // Layer 3: dim every non-selectable button in every visible pane.
     for (const pn of Object.values(screen.panes)) {
-      for (const it of pn.items) if (it.disabled && !it.skip) it.el.classList.add(DISABLED_CLASS);
+      for (const it of pn.items) if (it.disabled && !it.skip && it.el) it.el.classList.add(DISABLED_CLASS);
     }
     // Layer 2b: tint the active group's heading (Attack / Switch / Choose Lead).
     const controlsEl = item.el.closest(SELECTORS.controls);
@@ -380,7 +446,7 @@ export function createAdapter(options = {}) {
     // in the client, so it is the offset parent).
     const controls = item.el.closest(SELECTORS.controls);
     if (controls) {
-      const rects = p.items.filter(it => !it.skip || it.el.style.visibility === 'hidden').map(it => rectOf(it.el)).filter(r => r && r.width > 0);
+      const rects = p.items.filter(it => it.el && (!it.skip || it.el.style.visibility === 'hidden')).map(it => rectOf(it.el)).filter(r => r && r.width > 0);
       if (rects.length) {
         const cr = rectOf(controls);
         const pad = 4;
@@ -417,7 +483,7 @@ export function createAdapter(options = {}) {
     // Always-on forfeit hint: attach to QoL Battle Tools' Forfeit button when
     // present (it lives in the same room), else float it top-right of the controls.
     let forfeitHost = null;
-    if (labels.forfeit) {
+    if (labels.forfeit && !battleEnded()) {
       const room = getRoom();
       const qol = room && Array.from(room.querySelectorAll(SELECTORS.qolForfeit)).find(isVisible);
       forfeitHost = qol || controls;
@@ -470,6 +536,7 @@ export function createAdapter(options = {}) {
         if (t.closest(SELECTORS.controls)) { fire(); return; }
         if (rec.type === 'attributes' && t.matches && t.matches('.ps-room')) { fire(); return; }
         if (rec.type === 'childList' && (t === doc.body || t.matches?.('.ps-room, .battle-controls'))) { fire(); return; }
+        if (t.closest(SELECTORS.popup) || t.closest(SELECTORS.mainMenu)) { fire(); return; }
       }
     });
     observer.observe(doc.body || doc.documentElement, {
@@ -479,7 +546,7 @@ export function createAdapter(options = {}) {
   }
 
   return {
-    readScreen, activate, back, cancel, gimmick, selectSwitch, selectMove, skipTurn, goToEnd, forfeit,
+    readScreen, activate, back, cancel, gimmick, selectSwitch, selectMove, skipTurn, goToEnd, forfeit, closePopup, battleEnded,
     setCursor, clearCursor, paintHints, clearHints, setStatus, onControlsChanged, isTyping, getRoom, getControls,
   };
 }

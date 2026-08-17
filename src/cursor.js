@@ -28,10 +28,13 @@
 //         | { type: 'gimmick' }
 //         | { type: 'selectSwitch' } | { type: 'selectMove' }
 //         | { type: 'skipTurn' } | { type: 'goToEnd' }   (playback controls)
+//         | { type: 'closePopup' }
 
 // PLAYBACK = pause / first turn / prev turn / skip turn / skip to end buttons
 // (shown while the battle animation lags the log, and after the battle).
-export const PANE_PRIORITY = ['TARGET', 'SWITCH_TARGET', 'TEAM', 'MOVE', 'SWITCH', 'PLAYBACK'];
+// POPUP = a modal .ps-popup (format/team picker, confirmations) — always wins.
+// MENU  = the main menu buttons (only when no battle room is showing).
+export const PANE_PRIORITY = ['POPUP', 'TARGET', 'SWITCH_TARGET', 'TEAM', 'MOVE', 'SWITCH', 'PLAYBACK', 'MENU'];
 
 export function initialState() {
   return { pane: 'INACTIVE', index: 0, focusId: null, screenKey: null, memory: {} };
@@ -199,6 +202,7 @@ export function reduce(state, event, screen) {
       return { state, action: { type: 'activate', pane, index: state.index, id: item.id } };
     }
     case 'BACK': {
+      if (pane === 'POPUP') return controls.closePopup ? { state, action: { type: 'closePopup' } } : none;
       if (pane === 'WAIT') return controls.cancel ? { state, action: { type: 'cancel' } } : none;
       // Leaving the switch list returns to the moves first (mainline: B closes the Pokémon menu).
       if (pane === 'SWITCH' && availablePanes(screen).includes('MOVE')) {

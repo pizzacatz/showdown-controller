@@ -18,10 +18,11 @@ function mountRoom(name, { roomId = 'battle-gen9doublescustomgame-1' } = {}) {
 // the target grid on two rows (foes, then allies). Emulate with data from
 // the recon JSON: everything in the same .switchmenu/.movemenu shares a top.
 function rectOf(el) {
-  const menu = el.closest('.switchmenu, .movemenu');
+  const menu = el.closest('.switchmenu, .movemenu, p, .menugroup');
   if (!menu) return { top: 0, left: 0, width: 0, height: 0 };
-  const menus = [...document.querySelectorAll('.switchmenu, .movemenu')];
-  return { top: 100 + menus.indexOf(menu) * 40, left: 0, width: 100, height: 30 };
+  const menus = [...document.querySelectorAll('.switchmenu, .movemenu, p, .menugroup')];
+  const sibs = [...menu.querySelectorAll('button')];
+  return { top: 100 + menus.indexOf(menu) * 40, left: 4 + sibs.indexOf(el) * 106, width: 100, height: 30 };
 }
 const adapter = () => createAdapter({ doc: document, win: window, isVisible: () => true, rectOf });
 
@@ -177,9 +178,61 @@ describe('acting', () => {
     document.body.addEventListener('click', e => clicked.push(e.target.name), { once: true });
     expect(a.activate('PLAYBACK', 1, 'PLAYBACK:goToEnd')).toBe(true);
     expect(clicked).toEqual(['goToEnd']);
-    // Post-battle: pause/first/prev/skip/end are all in the pane; replay/main-menu buttons are not.
-    document.body.innerHTML = `<div class="ps-room" id="room-battle-x-9"><div class="battle-controls"><div class="controls"><p><button name="pause">Pause</button><button name="instantReplay">First</button><button name="rewindTurn">Prev</button><button name="skipTurn">Skip</button><button name="goToEnd">End</button></p><p><button name="saveReplay">Upload</button><button name="closeAndMainMenu">Main menu</button></p></div></div></div>`;
-    expect(a.readScreen().panes.PLAYBACK.items.map(i => i.id)).toEqual(['PLAYBACK:pause', 'PLAYBACK:instantReplay', 'PLAYBACK:rewindTurn', 'PLAYBACK:skipTurn', 'PLAYBACK:goToEnd']);
+    // Post-battle (client-battle.js line ~311): row 1 = download link + Instant replay,
+    // row 2 = Main menu + Rematch. Upload/download replay are deliberately not selectable.
+    document.body.innerHTML = `<div class="ps-room" id="room-battle-x-9"><div class="battle-controls"><div class="controls"><p><a class="replayDownloadButton button">Download</a><button class="button" name="instantReplay">Instant replay</button></p><p><button class="button" name="closeAndMainMenu">Main menu</button> <button class="button" name="closeAndRematch">Rematch</button></p><p><button name="saveReplay">Upload</button></p></div></div></div>`;
+    const end = a.readScreen().panes.PLAYBACK;
+    expect(end.columns).toBe(2);
+    expect(end.items.map(i => i.id + (i.skip ? '*' : ''))).toEqual(['PLAYBACK:instantReplay', 'PLAYBACK:pad:0:1*', 'PLAYBACK:closeAndMainMenu', 'PLAYBACK:closeAndRematch']);
+    expect(a.activate('PLAYBACK', 1)).toBe(false); // padding cell
+    expect(a.setCursor('PLAYBACK', 3)).toBe(true);
+    expect(document.querySelector('button[name="closeAndRematch"]').classList.contains(CURSOR_CLASS)).toBe(true);
+  });
+
+  it('a modal popup takes over: its buttons are the only pane; B closes it', () => {
+    mountRoom('03-move-select');
+    const a = adapter();
+    const pop = document.createElement('div'); pop.className = 'ps-popup';
+    pop.innerHTML = '<p><button name="selectFormat" value="gen9vgc">VGC</button><button name="selectFormat" value="gen9ou">OU</button></p><p class="buttonbar"><button name="close">Close</button></p>';
+    document.body.appendChild(pop);
+    const s = a.readScreen();
+    expect(Object.keys(s.panes)).toEqual(['POPUP']);
+    expect(s.controls.closePopup).toBe(true);
+    expect(s.panes.POPUP.columns).toBe(2);
+    expect(s.panes.POPUP.items.map(i => i.id + (i.skip ? '*' : ''))).toEqual(['POPUP:selectFormat:gen9vgc:VGC', 'POPUP:selectFormat:gen9ou:OU', 'POPUP:close::Close', 'POPUP:pad:1:1*']);
+    const clicked = [];
+    document.body.addEventListener('click', e => clicked.push(e.target.name));
+    expect(a.activate('POPUP', 1)).toBe(true);
+    expect(a.closePopup()).toBe(true);
+    expect(clicked).toEqual(['selectFormat', 'close']);
+    pop.querySelector('button[name="close"]').remove();
+    let dismissed = 0;
+    window.app = { dismissPopups: () => dismissed++, rooms: {} };
+    expect(a.closePopup()).toBe(true);
+    expect(dismissed).toBe(1);
+    delete window.app;
+    pop.remove();
+    expect(Object.keys(a.readScreen().panes).sort()).toEqual(['MOVE', 'SWITCH']);
+  });
+
+  it('main menu buttons form a MENU pane when the main menu is the current room', () => {
+    document.body.innerHTML = `<div class="ps-room" id="room-"><div class="mainmenu">
+      <div class="menugroup"><p><button class="select formatselect" name="format" value="gen9vgc">VGC</button></p><p><button class="select teamselect" name="team" value="0">Team</button></p><p><button class="button mainmenu1 big" name="search">Battle!</button></p></div>
+      <div class="menugroup"><p><button class="button mainmenu2" name="joinRoom" value="teambuilder">Teambuilder</button></p><p><button class="button mainmenu3" name="joinRoom" value="ladder">Ladder</button></p></div>
+    </div></div><div class="ps-room" id="room-battle-x-1" style="display:none"><div class="battle-controls"><div class="movecontrols"><div class="movemenu"><button class="movebutton" name="chooseMove" value="1">Move</button></div></div></div></div>`;
+    const a = adapter();
+    const s = a.readScreen();
+    expect(Object.keys(s.panes)).toEqual(['MENU']);
+    expect(s.panes.MENU.items.map(i => i.id)).toEqual(['MENU:format:gen9vgc:VGC', 'MENU:team:0:Team', 'MENU:search::Battle!', 'MENU:joinRoom:teambuilder:Teambuilder', 'MENU:joinRoom:ladder:Ladder']);
+    expect(s.panes.MENU.columns).toBe(1);
+    const clicked = [];
+    document.body.addEventListener('click', e => clicked.push(e.target.name), { once: true });
+    expect(a.activate('MENU', 2, 'MENU:search::Battle!')).toBe(true);
+    expect(clicked).toEqual(['search']);
+    // Battle room becomes current → menu no longer read
+    document.getElementById('room-').style.display = 'none';
+    document.getElementById('room-battle-x-1').style.display = '';
+    expect(Object.keys(a.readScreen().panes)).toEqual(['MOVE']);
   });
 
   it('forfeit sends /forfeit to the current room through the client API', () => {
@@ -304,6 +357,19 @@ describe('cursor highlight', () => {
     expect(a.readScreen().panes.PLAYBACK.items.map(i => i.id)).toEqual(['PLAYBACK:skipTurn', 'PLAYBACK:goToEnd']);
     a.clearHints();
     expect(document.querySelectorAll('.' + HINT_CLASS).length).toBe(0);
+  });
+
+  it('forfeit hint disappears once the battle is over (end-of-battle controls or battle.ended)', () => {
+    document.body.innerHTML = `<div class="ps-room" id="room-battle-x-9"><div class="battle-controls"><div class="controls"><p><button name="instantReplay">Instant replay</button></p><p><button name="closeAndMainMenu">Main menu</button><button name="closeAndRematch">Rematch</button></p></div></div></div>`;
+    const a = adapter();
+    expect(a.battleEnded()).toBe(true);
+    a.paintHints({ forfeit: 'Select' });
+    expect(document.querySelectorAll('.' + HINT_CLASS).length).toBe(0);
+    mountRoom('03-move-select', { roomId: 'battle-y-1' });
+    expect(a.battleEnded()).toBe(false);
+    window.app = { rooms: { 'battle-y-1': { battle: { ended: true } } } };
+    expect(a.battleEnded()).toBe(true);
+    delete window.app;
   });
 
   it('always-on forfeit hint: floats in the controls, or attaches to QoL Battle Tools\' Forfeit button', () => {

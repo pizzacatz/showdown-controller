@@ -46,9 +46,14 @@ press the controller button you want. Bindings are saved in the browser
 (localStorage) and the on-screen hints follow. *Reset defaults* restores the
 table above.
 
-Team preview, move select, doubles target select, forced switches and the
-"waiting for opponent" state are all covered. Disabled moves and
-active/fainted party slots can be highlighted but never activated.
+Team preview, move select, doubles target select, forced switches, the
+"waiting for opponent" state, the playback buttons and the end-of-battle
+screen (Instant replay / Main menu / Rematch) are all covered. Outside a
+battle the **main menu** buttons (format, team, Battle!, Teambuilder, …) are
+navigable too, and any Showdown **popup** (format picker, team picker,
+confirmations) takes over the cursor while it's open — **B** closes it.
+Disabled moves and active/fainted party slots can be highlighted but never
+activated. Upload/download-replay buttons are deliberately not selectable.
 
 The cursor is a two-tone ring (white inside, orange outside) that pulses
 gently; a soft orange tray plus an orange *Attack* / *Switch* heading marks
@@ -91,7 +96,7 @@ a browser.
 
 ```sh
 npm install
-npm test          # unit tests (71)
+npm test          # unit tests (76)
 npm run build     # dist/showdown-gamepad.user.js
 npm run recon -- --script dist/showdown-gamepad.user.js   # e2e vs a LOCAL server
 ```
@@ -106,7 +111,8 @@ the public server. Its stage snapshots land in `tools/out/`.
 
 ## Scope / non-goals (v1)
 
-Battle controls only — no teambuilder, ladder or chat navigation. No
+Battle controls, main menu and popups — no teambuilder, ladder or chat
+navigation. No
 remapping of the stick/d-pad axes (buttons remap in-page). Pads that don't
 report `mapping === "standard"` are refused with a console warning rather than
 guessed at. Classic client only; the `/beta` Preact client uses different

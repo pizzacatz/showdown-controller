@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Showdown Gamepad
 // @namespace    https://github.com/pizzacatz/showdown-controller
-// @version      0.4.0
+// @version      0.5.0
 // @description  Play Pokémon Showdown battles with an XInput controller: D-pad/stick cursor, A confirm, B back, X switch menu, Y tera/gimmick. Mouse and keyboard keep working.
 // @author       pizzacatz
 // @license      MIT
@@ -222,7 +222,7 @@
   }
 
   // src/cursor.js
-  var PANE_PRIORITY = ["TARGET", "SWITCH_TARGET", "TEAM", "MOVE", "SWITCH", "PLAYBACK"];
+  var PANE_PRIORITY = ["POPUP", "TARGET", "SWITCH_TARGET", "TEAM", "MOVE", "SWITCH", "PLAYBACK", "MENU"];
   function initialState() {
     return { pane: "INACTIVE", index: 0, focusId: null, screenKey: null, memory: {} };
   }
@@ -357,6 +357,7 @@
         return { state, action: { type: "activate", pane, index: state.index, id: item.id } };
       }
       case "BACK": {
+        if (pane === "POPUP") return controls.closePopup ? { state, action: { type: "closePopup" } } : none;
         if (pane === "WAIT") return controls.cancel ? { state, action: { type: "cancel" } } : none;
         if (pane === "SWITCH" && availablePanes(screen).includes("MOVE")) {
           return { state: switchPane(state, screen, "MOVE"), action: controls.selectMove ? { type: "selectMove" } : null };
@@ -410,7 +411,15 @@
     skipTurn: 'button[name="skipTurn"]',
     goToEnd: 'button[name="goToEnd"]',
     timer: ".timerbutton, .timer",
-    playback: 'button[name="pause"], button[name="play"], button[name="instantReplay"], button[name="rewindTurn"], button[name="skipTurn"], button[name="goToEnd"]',
+    // Playback + end-of-battle buttons. Upload/download replay are left out on
+    // purpose (outward-facing); QoL Battle Tools already automates them.
+    playback: 'button[name="pause"], button[name="play"], button[name="instantReplay"], button[name="rewindTurn"], button[name="skipTurn"], button[name="goToEnd"], button[name="closeAndMainMenu"], button[name="closeAndRematch"]',
+    // Modal popups (format picker, team picker, confirmations, errors). Topmost = last in DOM.
+    popup: ".ps-popup",
+    popupClose: 'button[name="close"]',
+    // Main menu (room id '' → element #room-). Includes injected buttons (Ghost Clicker) since they are plain buttons too.
+    mainMenu: ".mainmenu",
+    mainMenuRoom: "#room-",
     headings: { MOVE: ".moveselect button", SWITCH: ".switchselect button", TEAM: ".switchselect button" },
     qolForfeit: 'button[data-qol="forfeit"]'
     // QoL Battle Tools' arm-then-confirm forfeit button, if installed
@@ -523,37 +532,67 @@
       let id;
       if (kind === "MOVE") id = `move:${el.dataset.move || text || i}`;
       else if (kind === "PLAYBACK") id = `PLAYBACK:${name || text || i}`;
+      else if (kind === "POPUP" || kind === "MENU") id = `${kind}:${name || "x"}:${value ?? ""}:${text || i}`;
       else if (kind === "TARGET" || kind === "SWITCH_TARGET") id = `${kind}:${name || "x"}:${value ?? i}`;
       else id = `${kind}:${text || name + ":" + value || i}`;
       return { id, el, disabled: disabledAttr || disabledClass, skip };
     }
-    function columnsFor(els) {
-      if (!els.length) return 0;
-      const tops = els.map((el) => {
-        const r = rectOf(el);
-        return r ? Math.round(r.top) : 0;
-      });
-      if (tops.every((t) => t === 0)) return els.length;
-      const rows = [];
-      for (const t of tops) {
-        const row = rows.find((r) => Math.abs(r - t) <= 4);
-        if (row === void 0) rows.push(t);
-      }
-      rows.sort((a, b) => a - b);
-      let best = 0;
-      for (const r of rows) best = Math.max(best, tops.filter((t) => Math.abs(t - r) <= 4).length);
-      return best;
-    }
     function pane(kind, els) {
       const visible = els.filter(isVisible);
       if (!visible.length) return null;
-      return { items: visible.map((el, i) => itemOf(el, i, kind)), columns: columnsFor(visible) };
+      const rects = visible.map((el) => rectOf(el) || { top: 0, left: 0, width: 0, height: 0 });
+      if (rects.every((r) => !r.top && !r.left && !r.width)) {
+        return { items: visible.map((el, i) => itemOf(el, i, kind)), columns: visible.length };
+      }
+      const rows = [];
+      visible.forEach((el, i) => {
+        const r = rects[i];
+        let row = rows.find((rw) => Math.abs(rw.top - r.top) <= 4);
+        if (!row) {
+          row = { top: r.top, cells: [] };
+          rows.push(row);
+        }
+        row.cells.push({ el, left: r.left, i });
+      });
+      rows.sort((a, b) => a.top - b.top);
+      rows.forEach((rw) => rw.cells.sort((a, b) => a.left - b.left || a.i - b.i));
+      const columns = Math.max(...rows.map((rw) => rw.cells.length));
+      const items = [];
+      rows.forEach((rw, ri) => {
+        rw.cells.forEach((c) => items.push(itemOf(c.el, c.i, kind)));
+        for (let c = rw.cells.length; c < columns; c++) items.push({ id: `${kind}:pad:${ri}:${c}`, el: null, disabled: true, skip: true });
+      });
+      return { items, columns };
+    }
+    function getPopup() {
+      const pops = Array.from(doc.querySelectorAll(SELECTORS.popup)).filter(isVisible);
+      return pops.length ? pops[pops.length - 1] : null;
+    }
+    function getMainMenu() {
+      const app = win.app;
+      let roomEl = null;
+      if (app && app.curRoom && app.curRoom.$el && app.curRoom.$el[0]) roomEl = app.curRoom.$el[0];
+      else {
+        const el = doc.querySelector(SELECTORS.mainMenuRoom);
+        if (el && el.style.display !== "none") roomEl = el;
+      }
+      if (!roomEl || roomEl.id && roomEl.id !== "room-") return null;
+      return roomEl.querySelector(SELECTORS.mainMenu);
     }
     function readScreen() {
+      const popup = getPopup();
+      if (popup) {
+        const p = pane("POPUP", Array.from(popup.querySelectorAll("button")));
+        return { key: `popup|${popup.id || ""}|${p ? p.items.length : 0}`, panes: p ? { POPUP: p } : {}, controls: { closePopup: true }, room: null, popup };
+      }
       const room = getRoom();
       const controls = room && room.querySelector(SELECTORS.controls);
-      const empty = { key: null, panes: {}, controls: {}, room: null };
-      if (!controls) return empty;
+      if (!controls) {
+        const menu = getMainMenu();
+        const p = menu && pane("MENU", Array.from(menu.querySelectorAll("button")));
+        if (p) return { key: `menu|${p.items.length}`, panes: { MENU: p }, controls: {}, room: null, menu };
+        return { key: null, panes: {}, controls: {}, room: null };
+      }
       const panes = {};
       const q = (sel) => Array.from(controls.querySelectorAll(sel));
       if (q(SELECTORS.targetButtons).length) {
@@ -623,7 +662,7 @@
       const screen = readScreen();
       const p = screen.panes[paneName];
       const item = p && p.items[index];
-      if (!item || item.disabled || item.skip) return false;
+      if (!item || item.disabled || item.skip || !item.el) return false;
       if (id != null && item.id !== id) return false;
       return clickEl(item.el);
     }
@@ -639,7 +678,31 @@
     const selectSwitch = () => clickControl(SELECTORS.selectSwitch);
     const selectMove = () => clickControl(SELECTORS.selectMove);
     const skipTurn = () => clickControl(SELECTORS.skipTurn);
+    function closePopup() {
+      if (isTyping()) return false;
+      const popup = getPopup();
+      if (!popup) return false;
+      const btn = Array.from(popup.querySelectorAll(SELECTORS.popupClose)).find(isVisible);
+      if (btn) {
+        btn.click();
+        return true;
+      }
+      const app = win.app;
+      if (app && typeof app.dismissPopups === "function") {
+        app.dismissPopups();
+        return true;
+      }
+      return false;
+    }
     const goToEnd = () => clickControl(SELECTORS.goToEnd);
+    function battleEnded() {
+      const room = getRoom();
+      if (!room) return true;
+      const app = win.app;
+      const r = app && app.rooms && app.rooms[room.id.replace(/^room-/, "")];
+      if (r && (r.battleEnded || r.battle && r.battle.ended)) return true;
+      return !!room.querySelector('button[name="closeAndMainMenu"], button[name="closeAndRematch"]');
+    }
     function forfeit() {
       if (isTyping()) return false;
       const room = getRoom();
@@ -696,10 +759,10 @@
       const screen = readScreen();
       const p = screen.panes[paneName];
       const item = p && p.items[index];
-      if (!item) return false;
+      if (!item || !item.el) return false;
       item.el.classList.add(CURSOR_CLASS);
       for (const pn of Object.values(screen.panes)) {
-        for (const it of pn.items) if (it.disabled && !it.skip) it.el.classList.add(DISABLED_CLASS);
+        for (const it of pn.items) if (it.disabled && !it.skip && it.el) it.el.classList.add(DISABLED_CLASS);
       }
       const controlsEl = item.el.closest(SELECTORS.controls);
       const hsel = SELECTORS.headings[paneName];
@@ -709,7 +772,7 @@
       }
       const controls = item.el.closest(SELECTORS.controls);
       if (controls) {
-        const rects = p.items.filter((it) => !it.skip || it.el.style.visibility === "hidden").map((it) => rectOf(it.el)).filter((r) => r && r.width > 0);
+        const rects = p.items.filter((it) => it.el && (!it.skip || it.el.style.visibility === "hidden")).map((it) => rectOf(it.el)).filter((r) => r && r.width > 0);
         if (rects.length) {
           const cr = rectOf(controls);
           const pad = 4;
@@ -739,7 +802,7 @@
         });
       }
       let forfeitHost = null;
-      if (labels.forfeit) {
+      if (labels.forfeit && !battleEnded()) {
         const room = getRoom();
         const qol = room && Array.from(room.querySelectorAll(SELECTORS.qolForfeit)).find(isVisible);
         forfeitHost = qol || controls;
@@ -802,6 +865,10 @@
             fire();
             return;
           }
+          if (t.closest(SELECTORS.popup) || t.closest(SELECTORS.mainMenu)) {
+            fire();
+            return;
+          }
         }
       });
       observer.observe(doc.body || doc.documentElement, {
@@ -824,6 +891,8 @@
       skipTurn,
       goToEnd,
       forfeit,
+      closePopup,
+      battleEnded,
       setCursor,
       clearCursor,
       paintHints,
@@ -1012,7 +1081,7 @@
     let forfeitArmedAt = 0;
     let forfeitTimer = null;
     const L = (intent) => settings.labelFor(intent);
-    const forfeitHint = () => `(${L("FORFEIT")}) forfeit`;
+    const forfeitHint = () => adapter.battleEnded() ? "battle over" : `(${L("FORFEIT")}) forfeit`;
     function status() {
       if (forfeitArmedAt) {
         adapter.setStatus("off", `\u{1F3AE} FORFEIT armed \u2014 press ${L("FORFEIT")} again to concede, anything else to cancel`);
@@ -1021,7 +1090,9 @@
       if (!padSeen) adapter.setStatus("waiting", "\u{1F3AE} Gamepad: press any button on the controller \xB7 click here for bindings");
       else if (!enabled2) adapter.setStatus("off", `\u{1F3AE} Gamepad OFF \u2014 ${L("TOGGLE_LAYER")} or Ctrl+Shift+G to enable`);
       else if (state.pane === "WAIT") adapter.setStatus("on", `\u{1F3AE} Gamepad ON \u2014 waiting for opponent (${L("BACK")} = cancel) \xB7 ${forfeitHint()}`);
-      else if (state.pane === "INACTIVE") adapter.setStatus("on", `\u{1F3AE} Gamepad ON \u2014 no battle controls on screen \xB7 ${forfeitHint()}`);
+      else if (state.pane === "INACTIVE") adapter.setStatus("on", `\u{1F3AE} Gamepad ON \u2014 nothing selectable on screen \xB7 ${forfeitHint()}`);
+      else if (state.pane === "POPUP") adapter.setStatus("on", `\u{1F3AE} Gamepad ON \u2014 popup (${L("BACK")} = close)`);
+      else if (state.pane === "MENU") adapter.setStatus("on", "\u{1F3AE} Gamepad ON \u2014 main menu");
       else adapter.setStatus("on", `\u{1F3AE} Gamepad ON \u2014 ${state.pane.toLowerCase().replace("_", " ")} \xB7 ${forfeitHint()}`);
     }
     function hints() {
@@ -1086,6 +1157,9 @@
         case "goToEnd":
           adapter.goToEnd();
           break;
+        case "closePopup":
+          adapter.closePopup();
+          break;
         default:
           break;
       }
@@ -1098,8 +1172,8 @@
       }
     }
     function handleForfeit() {
-      if (!adapter.getRoom()) {
-        dbg("forfeit: no battle room");
+      if (!adapter.getRoom() || adapter.battleEnded()) {
+        dbg("forfeit: no live battle");
         return;
       }
       const now = win.performance.now();
@@ -1219,7 +1293,8 @@
           focusId: state.focusId,
           panes: Object.fromEntries(Object.entries(screen.panes).map(([k, v]) => [k, { n: v.items.length, columns: v.columns }])),
           controls: screen.controls,
-          item: p && p.items[state.index] ? { id: p.items[state.index].id, disabled: p.items[state.index].disabled } : null
+          item: p && p.items[state.index] ? { id: p.items[state.index].id, disabled: p.items[state.index].disabled } : null,
+          ids: p ? p.items.map((i) => i.id + (i.disabled ? "!" : "") + (i.skip ? "*" : "")) : []
         };
       },
       resync,

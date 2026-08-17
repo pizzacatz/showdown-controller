@@ -126,6 +126,29 @@ async function main() {
     const A = await setup(browser, NAMES[0], SCRIPT);
     const B = await setup(browser, NAMES[1], null);
 
+    if (SCRIPT) {
+      const drive0 = async (...intents) => {
+        let d;
+        for (const it of intents) { d = await A.evaluate(i => window.__showdownGamepad.inject(i), it); await sleep(120); }
+        return d || A.evaluate(() => window.__showdownGamepad.debug());
+      };
+      await A.evaluate(() => { app.focusRoom(''); window.__showdownGamepad.enable(true); });
+      await sleep(300);
+      let d = await drive0();
+      check(d.pane === 'MENU' && d.panes.MENU?.n >= 4, `main menu is a MENU pane (${d.pane}, ${JSON.stringify(d.panes)})`);
+      log('MENU items:', JSON.stringify(d.ids));
+      // Walk down until the format selector is under the cursor, then A opens the popup
+      const target = d.ids.findIndex(id => /^MENU:format:/.test(id));
+      for (let hops = 0; hops < 15 && d.index !== target; hops++) d = await drive0(d.index < target ? 'DOWN' : 'UP');
+      check(/^MENU:format:/.test(d.item?.id || ''), `cursor reached the format selector (${d.item?.id})`);
+      d = await drive0('CONFIRM'); await sleep(300); d = await drive0();
+      check(d.pane === 'POPUP' && d.panes.POPUP?.n > 5, `A opens the format popup as a POPUP pane (${d.pane}, n=${d.panes.POPUP?.n})`);
+      const before = d.index;
+      d = await drive0('DOWN');
+      check(d.pane === 'POPUP' && d.index !== before, `cursor moves inside the popup (${before} → ${d.index})`);
+      d = await drive0('BACK'); await sleep(300); d = await drive0();
+      check(d.pane === 'MENU' && (await A.evaluate(() => document.querySelectorAll('.ps-popup').length)) === 0, `B closes the popup, back to MENU (${d.pane})`);
+    }
     await A.evaluate((n, f) => app.send(`/challenge ${n}, ${f}`), NAMES[1], FORMAT);
     await sleep(500);
     await B.evaluate(n => app.send(`/accept ${n}`), NAMES[0]);
@@ -343,8 +366,24 @@ async function main() {
       check(!/FORFEIT armed/.test(badge?.text || '') && alive1, 'any other button disarms; nothing was sent');
       await drive('FORFEIT'); await drive('FORFEIT');
       const ended = await waitFor(A, src => { const r = eval(src); return /forfeited/.test(r?.querySelector('.battle-log')?.textContent || ''); }, { desc: 'forfeit in log', timeout: 10000, args: [ROOM] }).catch(() => false);
-      check(ended === true, 'Start twice within 4s forfeits (battle log shows "forfeited")');
+      check(ended === true, 'Select twice within 4s forfeits (battle log shows "forfeited")');
       await snapshot(A, '14-after-forfeit');
+      // Playback catches up → end-of-battle buttons. Navigate to Main menu with the cursor.
+      const sawEnd = await waitFor(A, src => { const r = eval(src); return !!r?.querySelector('.battle-controls button[name="closeAndMainMenu"]'); }, { desc: 'end-of-battle buttons', timeout: 30000, args: [ROOM] }).catch(() => false);
+      check(sawEnd === true, 'end-of-battle controls appear (Instant replay / Main menu / Rematch)');
+      if (sawEnd) {
+        d = await drive();
+        check(d.pane === 'PLAYBACK' && d.panes.PLAYBACK?.columns === 2, `end screen is a 2-column PLAYBACK grid (${JSON.stringify(d.panes)})`);
+        await snapshot(A, '15-end-screen');
+        let hops = 0;
+        while (d.item?.id !== 'PLAYBACK:closeAndMainMenu' && hops++ < 6) d = await drive(hops % 2 ? 'DOWN' : 'LEFT');
+        check(d.item?.id === 'PLAYBACK:closeAndMainMenu', `cursor reaches Main menu (${d.item?.id})`);
+        await A.screenshot({ path: path.join(OUT, '15-end-screen.png'), clip: { x: 0, y: 360, width: 660, height: 300 } });
+        await drive('CONFIRM'); await sleep(500);
+        const roomsLeft = await A.evaluate(() => Object.keys(app.rooms).filter(k => k.startsWith('battle-')).length);
+        d = await drive();
+        check(d.pane === 'MENU', `A on Main menu closes the battle and lands on the MENU pane (${d.pane}, battle rooms left: ${roomsLeft})`);
+      }
     }
 
     log(`done; ${failures} failure(s); output in ${OUT}`);

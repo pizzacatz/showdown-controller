@@ -44,9 +44,13 @@ tabs and only one of `.movemenu`/`.switchmenu` is shown (`.move-controls` /
 `.switch-controls` class on `.controls`). On desktop **both moves and party are
 visible at once**; the `Attack`/`Switch` buttons are inert labels.
 
-Because of this the adapter derives `columns` from geometry (group buttons by
-`getBoundingClientRect().top`) instead of hard-coding "2". Result on desktop:
-moves 4 columns, party 6, targets = active mons per side.
+Because of this the adapter derives the grid from geometry: buttons are
+grouped into rows by `getBoundingClientRect().top` (4px tolerance), rows
+ordered top→bottom and cells left→right, and short rows are padded with
+`skip` placeholders so the flat list is row-major with one column count.
+Result on desktop: moves 4 columns, party 6, targets = active mons per side,
+end-of-battle screen 2 columns (`[instantReplay, pad] / [mainMenu, rematch]`),
+main menu 1 column, popups whatever their layout is.
 
 ## Screens the adapter distinguishes
 
@@ -58,7 +62,10 @@ moves 4 columns, party 6, targets = active mons per side.
 | switch (forced, after faint) | `SWITCH` only | — |
 | switchposition (`chooseSwitchTarget`) | `SWITCH_TARGET` | `clearChoice` |
 | waiting (`getPlayerChoicesHTML`) | none | `undoChoice` Cancel |
-| anything else / battle over | none | — |
+| playback lagging | `PLAYBACK` (`skipTurn`, `goToEnd`; after the battle also `pause`/`instantReplay`/`rewindTurn`) | — |
+| battle over (players) | `PLAYBACK` grid: row 1 `instantReplay` (+ `a.replayDownloadButton`, not selectable), row 2 `closeAndMainMenu` `closeAndRematch` | `saveReplay` not selectable |
+| any `.ps-popup` (format/team picker, confirmations) | `POPUP` — every button in the topmost popup; modal, outranks all battle panes | `button[name=close]` or `app.dismissPopups()` on B |
+| main menu (room id `''`, element `#room-`) | `MENU` — `.mainmenu button` (format/team selectors, `search`, `joinRoom …`, injected buttons) | — |
 
 `chooseDisabled` party buttons (active/fainted mons) are *not* `disabled`
 attributes — clicking them opens a Showdown popup — so the adapter marks them

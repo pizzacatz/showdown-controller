@@ -219,6 +219,21 @@ describe('reduce()', () => {
     expect(r.state).toMatchObject({ pane: 'MOVE', index: 1 });         // top: no-op
     expect(run(initialState(), teamScreen(0), 'DOWN').state.pane).toBe('TEAM'); // no party pane → no-op
   });
+  it('POPUP outranks every battle pane; B closes it', () => {
+    const scr = { key: 'p', panes: { POPUP: { items: items(3, 'P'), columns: 3 }, MOVE: moveScreen().panes.MOVE }, controls: { closePopup: true } };
+    const r = run(initialState(), scr, 'RIGHT', 'BACK');
+    expect(r.state.pane).toBe('POPUP');
+    expect(r.state.index).toBe(1);
+    expect(r.last).toEqual({ type: 'closePopup' });
+    expect(run(initialState(), scr, 'CONFIRM').last).toMatchObject({ type: 'activate', pane: 'POPUP', index: 0 });
+  });
+  it('MENU is a plain pane: navigate and confirm, B/X/Y do nothing', () => {
+    const scr = { key: 'm', panes: { MENU: { items: items(5, 'M'), columns: 1 } }, controls: {} };
+    const r = run(initialState(), scr, 'DOWN', 'DOWN', 'RIGHT', 'BACK', 'SWITCH_MENU', 'GIMMICK', 'CONFIRM');
+    expect(r.state.index).toBe(2);
+    expect(r.actions.slice(0, 6).every(a => a === null)).toBe(true);
+    expect(r.last).toEqual({ type: 'activate', pane: 'MENU', index: 2, id: 'M2' });
+  });
   it('LB/RB skip turn / skip to end only when the playback buttons are on screen', () => {
     const playing = { key: 'p', panes: {}, controls: { skipTurn: true, goToEnd: true } };
     expect(run(initialState(), playing, 'SKIP_TURN').last).toEqual({ type: 'skipTurn' });
