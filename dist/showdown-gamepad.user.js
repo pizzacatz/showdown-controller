@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Showdown Gamepad
 // @namespace    https://github.com/pizzacatz/showdown-controller
-// @version      0.1.1
+// @version      0.2.0
 // @description  Play Pokémon Showdown battles with an XInput controller: D-pad/stick cursor, A confirm, B back, X switch menu, Y tera/gimmick. Mouse and keyboard keep working.
 // @author       pizzacatz
 // @license      MIT
@@ -38,6 +38,9 @@
     [BUTTON.B]: "BACK",
     [BUTTON.X]: "SWITCH_MENU",
     [BUTTON.Y]: "GIMMICK",
+    [BUTTON.LB]: "SKIP_TURN",
+    [BUTTON.RB]: "SKIP_TO_END",
+    [BUTTON.START]: "FORFEIT",
     [BUTTON.BACK]: "TOGGLE_LAYER",
     [BUTTON.UP]: "UP",
     [BUTTON.DOWN]: "DOWN",
@@ -311,7 +314,16 @@
       case "RIGHT": {
         if (!items.length) return none;
         const index = move(items, columnsOf(paneData), state.index, type);
-        if (index === state.index) return none;
+        if (index === state.index) {
+          const avail = availablePanes(screen);
+          if (type === "DOWN" && pane === "MOVE" && avail.includes("SWITCH")) {
+            return { state: switchPane(state, screen, "SWITCH"), action: controls.selectSwitch ? { type: "selectSwitch" } : null };
+          }
+          if (type === "UP" && pane === "SWITCH" && avail.includes("MOVE")) {
+            return { state: switchPane(state, screen, "MOVE"), action: controls.selectMove ? { type: "selectMove" } : null };
+          }
+          return none;
+        }
         const focusId = items[index].id;
         return { state: { ...state, index, focusId, memory: { ...state.memory, [pane]: focusId } }, action: null };
       }
@@ -336,6 +348,10 @@
       }
       case "GIMMICK":
         return controls.gimmick ? { state, action: { type: "gimmick" } } : none;
+      case "SKIP_TURN":
+        return controls.skipTurn ? { state, action: { type: "skipTurn" } } : none;
+      case "SKIP_TO_END":
+        return controls.goToEnd ? { state, action: { type: "goToEnd" } } : none;
       default:
         return none;
     }
@@ -367,6 +383,8 @@
     gimmick: '.megaevo-box input[type="checkbox"], label.megaevo input[type="checkbox"]',
     selectSwitch: 'button[name="selectSwitch"]',
     selectMove: 'button[name="selectMove"]',
+    skipTurn: 'button[name="skipTurn"]',
+    goToEnd: 'button[name="goToEnd"]',
     timer: ".timerbutton, .timer"
   };
   var CURSOR_CLASS = "sgp-cursor";
@@ -484,7 +502,10 @@
         cancel: has(SELECTORS.cancel),
         gimmick: has(SELECTORS.gimmick),
         selectSwitch: !!q(SELECTORS.selectSwitch).length,
-        selectMove: !!q(SELECTORS.selectMove).length
+        selectMove: !!q(SELECTORS.selectMove).length,
+        // Playback controls exist only while the battle display lags the log.
+        skipTurn: q(SELECTORS.skipTurn).some((el) => isVisible(el) && !el.disabled),
+        goToEnd: q(SELECTORS.goToEnd).some((el) => isVisible(el) && !el.disabled)
       };
       const whatdo = controls.querySelector(SELECTORS.whatdo);
       let prompt = "";
@@ -538,6 +559,25 @@
     const cancel = () => clickControl(SELECTORS.cancel);
     const selectSwitch = () => clickControl(SELECTORS.selectSwitch);
     const selectMove = () => clickControl(SELECTORS.selectMove);
+    const skipTurn = () => clickControl(SELECTORS.skipTurn);
+    const goToEnd = () => clickControl(SELECTORS.goToEnd);
+    function forfeit() {
+      if (isTyping()) return false;
+      const room = getRoom();
+      if (!room) return false;
+      const roomId = room.id.replace(/^room-/, "");
+      const app = win.app;
+      const r = app && app.rooms && app.rooms[roomId];
+      if (r && typeof r.send === "function") {
+        r.send("/forfeit");
+        return true;
+      }
+      if (app && typeof app.send === "function") {
+        app.send("/forfeit", roomId);
+        return true;
+      }
+      return false;
+    }
     function gimmick() {
       if (isTyping()) return false;
       const controls = getControls();
@@ -629,6 +669,9 @@
       gimmick,
       selectSwitch,
       selectMove,
+      skipTurn,
+      goToEnd,
+      forfeit,
       setCursor,
       clearCursor,
       setStatus,
@@ -647,7 +690,9 @@
     // Ctrl+Shift+G — free in the classic client
     deadzone: DEFAULTS.deadzone,
     repeatDelay: DEFAULTS.repeatDelay,
-    repeatInterval: DEFAULTS.repeatInterval
+    repeatInterval: DEFAULTS.repeatInterval,
+    forfeitConfirmMs: 4e3
+    // Start once arms, Start again within this window forfeits
   };
   var TAG = "[showdown-gamepad]";
   var log = (...a) => console.log(TAG, ...a);
@@ -660,7 +705,13 @@
     let state = initialState();
     let enabled2 = CONFIG.enabledByDefault;
     let padSeen = false;
+    let forfeitArmedAt = 0;
+    let forfeitTimer = null;
     function status() {
+      if (forfeitArmedAt) {
+        adapter.setStatus("off", "\u{1F3AE} FORFEIT armed \u2014 press Start again to concede, anything else to cancel");
+        return;
+      }
       if (!padSeen) adapter.setStatus("waiting", "\u{1F3AE} Gamepad: press any button on the controller");
       else if (!enabled2) adapter.setStatus("off", "\u{1F3AE} Gamepad OFF \u2014 Back/Select or Ctrl+Shift+G to enable");
       else if (state.pane === "WAIT") adapter.setStatus("on", "\u{1F3AE} Gamepad ON \u2014 waiting for opponent (B = cancel)");
@@ -715,12 +766,47 @@
         case "selectMove":
           adapter.selectMove();
           break;
+        case "skipTurn":
+          adapter.skipTurn();
+          break;
+        case "goToEnd":
+          adapter.goToEnd();
+          break;
         default:
           break;
       }
     }
+    function disarmForfeit() {
+      forfeitArmedAt = 0;
+      if (forfeitTimer) {
+        win.clearTimeout(forfeitTimer);
+        forfeitTimer = null;
+      }
+    }
+    function handleForfeit() {
+      if (!adapter.getRoom()) {
+        dbg("forfeit: no battle room");
+        return;
+      }
+      const now = win.performance.now();
+      if (forfeitArmedAt && now - forfeitArmedAt <= CONFIG.forfeitConfirmMs) {
+        disarmForfeit();
+        const ok = adapter.forfeit();
+        log(ok ? "forfeit sent" : "forfeit: client API unavailable");
+        paint();
+        return;
+      }
+      forfeitArmedAt = now;
+      forfeitTimer = win.setTimeout(() => {
+        disarmForfeit();
+        paint();
+      }, CONFIG.forfeitConfirmMs);
+      log(`forfeit armed \u2014 press Start again within ${CONFIG.forfeitConfirmMs / 1e3}s to concede`);
+      paint();
+    }
     function handleIntent(type) {
       if (type === "TOGGLE_LAYER") {
+        disarmForfeit();
         setEnabled(!enabled2);
         return;
       }
@@ -728,6 +814,14 @@
       if (adapter.isTyping()) {
         dbg("ignored (typing):", type);
         return;
+      }
+      if (type === "FORFEIT") {
+        handleForfeit();
+        return;
+      }
+      if (forfeitArmedAt) {
+        disarmForfeit();
+        paint();
       }
       const screen = adapter.readScreen();
       const { state: next, action } = reduce(state, type, screen);

@@ -149,6 +149,40 @@ describe('acting', () => {
     document.body.removeEventListener('click', listen);
   });
 
+  it('skipTurn / goToEnd: detected only when present and enabled; clicked by name', () => {
+    // Playback-lag markup from client-battle.js updateControls()
+    document.body.innerHTML = `<div class="ps-room" id="room-battle-x-9"><div class="battle-controls"><p><button class="button" name="skipTurn"><i class="fa fa-step-forward"></i><br>Skip turn</button> <button class="button" name="goToEnd"><i class="fa fa-fast-forward"></i><br>Skip to end</button></p></div></div>`;
+    const a = adapter();
+    expect(a.readScreen().controls).toMatchObject({ skipTurn: true, goToEnd: true, cancel: false });
+    const clicked = [];
+    document.body.addEventListener('click', e => clicked.push(e.target.name));
+    expect(a.skipTurn()).toBe(true);
+    expect(a.goToEnd()).toBe(true);
+    expect(clicked).toEqual(['skipTurn', 'goToEnd']);
+    // Battle-end variant renders them disabled and unnamed
+    document.body.innerHTML = `<div class="ps-room" id="room-battle-x-9"><div class="battle-controls"><p><button class="button disabled" disabled>Skip turn</button><button class="button disabled" disabled>Skip to end</button></p></div></div>`;
+    expect(a.readScreen().controls).toMatchObject({ skipTurn: false, goToEnd: false });
+    expect(a.skipTurn()).toBe(false);
+    mountRoom('03-move-select');
+    expect(a.readScreen().controls).toMatchObject({ skipTurn: false, goToEnd: false });
+  });
+
+  it('forfeit sends /forfeit to the current room through the client API', () => {
+    mountRoom('03-move-select', { roomId: 'battle-gen9vgc-77' });
+    const sent = [];
+    window.app = { rooms: { 'battle-gen9vgc-77': { send: c => sent.push(['room', c]) } }, send: (c, r) => sent.push(['app', c, r]) };
+    const a = adapter();
+    expect(a.forfeit()).toBe(true);
+    expect(sent).toEqual([['room', '/forfeit']]);
+    window.app = { rooms: {}, send: (c, r) => sent.push(['app', c, r]) };
+    expect(a.forfeit()).toBe(true);
+    expect(sent[1]).toEqual(['app', '/forfeit', 'battle-gen9vgc-77']);
+    delete window.app;
+    expect(a.forfeit()).toBe(false);
+    document.body.innerHTML = '';
+    expect(a.forfeit()).toBe(false);
+  });
+
   it('gimmick toggles the tera checkbox via a click', () => {
     mountRoom('03-move-select');
     const a = adapter();

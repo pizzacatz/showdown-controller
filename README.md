@@ -7,7 +7,7 @@ mainline-games feel, layered over the normal web UI.
 
 Mouse and keyboard keep working at all times. The script never decides
 anything for you: every button press maps to one click you could have made
-yourself. Forfeit is deliberately not bound.
+yourself. Forfeit needs two presses of Start within 4 seconds.
 
 ## Install
 
@@ -33,8 +33,11 @@ support can capture it; Chrome is the most reliable).
 | D-pad / left stick | Move the cursor (holds repeat: 400 ms, then every 120 ms) |
 | **A** | Confirm / activate the highlighted button |
 | **B** | Back — Showdown's *Back* (previous slot / leave target select), *Cancel* while waiting on the opponent, or leave the party list |
-| **X** | Jump to the party (switch) list |
+| **X** | Jump to the party (switch) list (↓ off the bottom of the moves does the same; ↑ from the party goes back) |
 | **Y** | Toggle Terastallize / Mega / Z / Dynamax checkbox |
+| **LB** | Skip turn (only while the battle animation is behind) |
+| **RB** | Skip to end (same) |
+| **Start** | Forfeit — press once to arm (the status pill turns red), press again within 4 s to concede; any other button cancels. In a Bo3 this concedes the current game. |
 | **Back/Select** | Turn the whole controller layer on/off |
 | `Ctrl+Shift+G` | Same toggle, from the keyboard |
 
@@ -77,7 +80,7 @@ a browser.
 
 ```sh
 npm install
-npm test          # unit tests (56)
+npm test          # unit tests (60)
 npm run build     # dist/showdown-gamepad.user.js
 npm run recon -- --script dist/showdown-gamepad.user.js   # e2e vs a LOCAL server
 ```

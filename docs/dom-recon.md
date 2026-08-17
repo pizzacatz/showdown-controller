@@ -90,6 +90,7 @@ attributes — clicking them opens a Showdown popup — so the adapter marks the
 | Move pane 2 columns, switch pane 2 columns | columns from geometry (4 / 6 on desktop) | the desktop client lays each menu out in one row |
 | Left/right = ±1 over the flat list | ±1 **within the row**, clamped at row edges | flat ±1 from the right-most foe target wrapped down onto the ally — a real misclick vector; skip-aware vertical movement already guarantees reachability |
 | four panes | + `TEAM` (team preview) and `SWITCH_TARGET`; `WAIT` state with B = Cancel | VGC battles start with team preview; waiting state has a Cancel button |
-| "X opens switch menu" | X moves the cursor to the party pane (and clicks `selectSwitch` for the small layout) | on desktop the party is always visible |
+| "X opens switch menu" | X moves the cursor to the party pane (and clicks `selectSwitch` for the small layout); ↓ off the move row / ↑ off the party row do the same | on desktop the party is always visible, stacked under the moves |
+| forfeit unbound | Start = arm, Start again ≤4 s = `room.send('/forfeit')` (client API, as QoL Battle Tools does); LB/RB = `skipTurn`/`goToEnd` | requested after v0.1; two-press arm keeps it non-accidental |
 | typing guard = any focused input | focused text field **with content** | see above |
 | identity by label text | move name / Pokémon name from the first text node; targets by `name:value` | PP text changes mid-turn; disabled moves have no `data-move` |

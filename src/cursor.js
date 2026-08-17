@@ -26,6 +26,7 @@
 //         | { type: 'cancel' }       (Showdown "Cancel" = undoChoice)
 //         | { type: 'gimmick' }
 //         | { type: 'selectSwitch' } | { type: 'selectMove' }
+//         | { type: 'skipTurn' } | { type: 'goToEnd' }   (playback controls)
 
 export const PANE_PRIORITY = ['TARGET', 'SWITCH_TARGET', 'TEAM', 'MOVE', 'SWITCH'];
 
@@ -174,7 +175,18 @@ export function reduce(state, event, screen) {
     case 'UP': case 'DOWN': case 'LEFT': case 'RIGHT': {
       if (!items.length) return none;
       const index = move(items, columnsOf(paneData), state.index, type);
-      if (index === state.index) return none;
+      if (index === state.index) {
+        // Moves and party are stacked on the desktop layout: ↓ off the bottom
+        // of the moves enters the party list, ↑ off its top returns.
+        const avail = availablePanes(screen);
+        if (type === 'DOWN' && pane === 'MOVE' && avail.includes('SWITCH')) {
+          return { state: switchPane(state, screen, 'SWITCH'), action: controls.selectSwitch ? { type: 'selectSwitch' } : null };
+        }
+        if (type === 'UP' && pane === 'SWITCH' && avail.includes('MOVE')) {
+          return { state: switchPane(state, screen, 'MOVE'), action: controls.selectMove ? { type: 'selectMove' } : null };
+        }
+        return none;
+      }
       const focusId = items[index].id;
       return { state: { ...state, index, focusId, memory: { ...state.memory, [pane]: focusId } }, action: null };
     }
@@ -200,6 +212,10 @@ export function reduce(state, event, screen) {
     }
     case 'GIMMICK':
       return controls.gimmick ? { state, action: { type: 'gimmick' } } : none;
+    case 'SKIP_TURN':
+      return controls.skipTurn ? { state, action: { type: 'skipTurn' } } : none;
+    case 'SKIP_TO_END':
+      return controls.goToEnd ? { state, action: { type: 'goToEnd' } } : none;
     default:
       return none;
   }

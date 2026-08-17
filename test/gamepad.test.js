@@ -43,8 +43,9 @@ describe('readIntents', () => {
     expect([...readIntents(fakePad({ axes: [-0.9, 0.7] }))]).toEqual(['LEFT']);
     expect([...readIntents(fakePad({ axes: [0.8, -0.8] }))]).toEqual(['RIGHT']); // tie → x wins
   });
-  it('does not bind forfeit or unassigned buttons', () => {
-    expect([...readIntents(fakePad({ pressed: [BUTTON.START, BUTTON.LB, BUTTON.RB, BUTTON.LT, BUTTON.RT] }))]).toEqual([]);
+  it('binds shoulder buttons and Start; leaves triggers and sticks-click unbound', () => {
+    expect([...readIntents(fakePad({ pressed: [BUTTON.LB, BUTTON.RB, BUTTON.START] }))].sort()).toEqual(['FORFEIT', 'SKIP_TO_END', 'SKIP_TURN']);
+    expect([...readIntents(fakePad({ pressed: [BUTTON.LT, BUTTON.RT, BUTTON.L3, BUTTON.R3] }))]).toEqual([]);
   });
 });
 

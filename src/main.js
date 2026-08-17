@@ -10,6 +10,7 @@ const CONFIG = {
   deadzone: INPUT_DEFAULTS.deadzone,
   repeatDelay: INPUT_DEFAULTS.repeatDelay,
   repeatInterval: INPUT_DEFAULTS.repeatInterval,
+  forfeitConfirmMs: 4000, // Start once arms, Start again within this window forfeits
 };
 
 const TAG = '[showdown-gamepad]';
@@ -22,8 +23,11 @@ export function start(win = window) {
   let state = initialState();
   let enabled = CONFIG.enabledByDefault;
   let padSeen = false;
+  let forfeitArmedAt = 0;
+  let forfeitTimer = null;
 
   function status() {
+    if (forfeitArmedAt) { adapter.setStatus('off', '🎮 FORFEIT armed — press Start again to concede, anything else to cancel'); return; }
     if (!padSeen) adapter.setStatus('waiting', '🎮 Gamepad: press any button on the controller');
     else if (!enabled) adapter.setStatus('off', '🎮 Gamepad OFF — Back/Select or Ctrl+Shift+G to enable');
     else if (state.pane === 'WAIT') adapter.setStatus('on', '🎮 Gamepad ON — waiting for opponent (B = cancel)');
@@ -64,14 +68,39 @@ export function start(win = window) {
       case 'gimmick': adapter.gimmick(); break;
       case 'selectSwitch': adapter.selectSwitch(); break;
       case 'selectMove': adapter.selectMove(); break;
+      case 'skipTurn': adapter.skipTurn(); break;
+      case 'goToEnd': adapter.goToEnd(); break;
       default: break;
     }
   }
 
+  function disarmForfeit() {
+    forfeitArmedAt = 0;
+    if (forfeitTimer) { win.clearTimeout(forfeitTimer); forfeitTimer = null; }
+  }
+
+  function handleForfeit() {
+    if (!adapter.getRoom()) { dbg('forfeit: no battle room'); return; }
+    const now = win.performance.now();
+    if (forfeitArmedAt && now - forfeitArmedAt <= CONFIG.forfeitConfirmMs) {
+      disarmForfeit();
+      const ok = adapter.forfeit();
+      log(ok ? 'forfeit sent' : 'forfeit: client API unavailable');
+      paint();
+      return;
+    }
+    forfeitArmedAt = now;
+    forfeitTimer = win.setTimeout(() => { disarmForfeit(); paint(); }, CONFIG.forfeitConfirmMs);
+    log(`forfeit armed — press Start again within ${CONFIG.forfeitConfirmMs / 1000}s to concede`);
+    paint();
+  }
+
   function handleIntent(type) {
-    if (type === 'TOGGLE_LAYER') { setEnabled(!enabled); return; }
+    if (type === 'TOGGLE_LAYER') { disarmForfeit(); setEnabled(!enabled); return; }
     if (!enabled) return;
     if (adapter.isTyping()) { dbg('ignored (typing):', type); return; }
+    if (type === 'FORFEIT') { handleForfeit(); return; }
+    if (forfeitArmedAt) { disarmForfeit(); paint(); } // any other button cancels the arm
     const screen = adapter.readScreen();
     const { state: next, action } = reduce(state, type, screen);
     state = next;

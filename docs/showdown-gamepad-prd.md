@@ -334,6 +334,11 @@ guard treats an *empty* focused chat box as not typing (the client auto-focuses
 it); X moves the cursor to the always-visible party list rather than "opening"
 a menu.
 
+v0.2.0 (2026-08-17), by request: Start = forfeit (arm-then-confirm, 4 s window,
+any other button disarms; sends `/forfeit` via the client room API), LB = Skip
+turn, RB = Skip to end (playback buttons, only when present), ↓/↑ cross between
+the move row and the party row. All verified live via `tools/recon.js`.
+
 Validation list (§9): every item except the physical-pad ones (first-press
 detection, unplug, analog diagonals on real hardware, coexistence with the
 replay-capture script) is exercised by `tools/recon.js --script` against the

@@ -271,8 +271,41 @@ async function main() {
       await inRoom(A, () => { app.curRoom.updateControls(); });
       await sleep(200); d = await drive();
       check(d.focusId === focusBefore, `cursor survives a full controls re-render (${focusBefore} → ${d.focusId})`);
-      const badge = await A.evaluate(() => { const b = document.getElementById('sgp-status'); return b && { state: b.dataset.state, text: b.textContent }; });
+      const badgeOf = () => A.evaluate(() => { const b = document.getElementById('sgp-status'); return b && { state: b.dataset.state, text: b.textContent }; });
+      let badge = await badgeOf();
       check(badge && badge.state === 'on' && /Gamepad ON/.test(badge.text), `status badge shows ON (${JSON.stringify(badge)})`);
+
+      // ↓ / ↑ cross between the stacked move row and party row
+      d = await drive('DOWN');
+      check(d.pane === 'SWITCH' && d.item?.disabled === false, `↓ off the moves enters the party list on a switchable mon (${d.pane}/${d.index})`);
+      d = await drive('UP');
+      check(d.pane === 'MOVE', `↑ off the party returns to the moves (${d.pane})`);
+
+      // Skip turn / skip to end: submit a turn on both sides, then RB while playback lags
+      await drive('LEFT', 'LEFT', 'LEFT', 'RIGHT', 'RIGHT', 'CONFIRM'); await sleep(150);   // Protect slot 1
+      await drive('CONFIRM'); await sleep(150);                                              // Protect slot 2 → waiting
+      for (const sel of ['button[name="chooseMove"][value="3"]', 'button[name="chooseMove"][value="3"]']) { await clickIn(B, sel); await sleep(150); }
+      const sawSkip = await waitFor(A, src => { const r = eval(src); return !!r?.querySelector('.battle-controls button[name="goToEnd"]'); }, { desc: 'goToEnd button', timeout: 15000, args: [ROOM] }).catch(() => false);
+      check(sawSkip === true, 'playback controls (Skip turn / Skip to end) appear while the turn animates');
+      if (sawSkip) {
+        d = await drive();
+        check(d.controls.goToEnd === true && d.controls.skipTurn === true, `adapter sees skipTurn/goToEnd (${JSON.stringify(d.controls)})`);
+        await drive('SKIP_TO_END'); await sleep(400);
+        const caughtUp = await inRoom(A, r => !r.querySelector('.battle-controls button[name="goToEnd"]') && !!r.querySelector('.battle-controls button[name="chooseMove"]'));
+        check(caughtUp === true, 'RB (skip to end) snaps playback to the new turn');
+      }
+      d = await drive(); check(d.controls.skipTurn === false, 'LB is a no-op when there is nothing to skip');
+
+      // Forfeit: arm, cancel with another button, arm again, confirm
+      await drive('FORFEIT'); badge = await badgeOf();
+      check(/FORFEIT armed/.test(badge?.text || ''), `Start arms forfeit and the badge says so (${badge?.text})`);
+      const alive1 = await inRoom(A, r => !/forfeited/.test(r.querySelector('.battle-log')?.textContent || ''));
+      await drive('RIGHT'); badge = await badgeOf();
+      check(!/FORFEIT armed/.test(badge?.text || '') && alive1, 'any other button disarms; nothing was sent');
+      await drive('FORFEIT'); await drive('FORFEIT');
+      const ended = await waitFor(A, src => { const r = eval(src); return /forfeited/.test(r?.querySelector('.battle-log')?.textContent || ''); }, { desc: 'forfeit in log', timeout: 10000, args: [ROOM] }).catch(() => false);
+      check(ended === true, 'Start twice within 4s forfeits (battle log shows "forfeited")');
+      await snapshot(A, '14-after-forfeit');
     }
 
     log(`done; ${failures} failure(s); output in ${OUT}`);

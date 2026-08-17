@@ -23,6 +23,8 @@ export const SELECTORS = {
   gimmick: '.megaevo-box input[type="checkbox"], label.megaevo input[type="checkbox"]',
   selectSwitch: 'button[name="selectSwitch"]',
   selectMove: 'button[name="selectMove"]',
+  skipTurn: 'button[name="skipTurn"]',
+  goToEnd: 'button[name="goToEnd"]',
   timer: '.timerbutton, .timer',
 };
 
@@ -167,6 +169,9 @@ export function createAdapter(options = {}) {
       gimmick: has(SELECTORS.gimmick),
       selectSwitch: !!q(SELECTORS.selectSwitch).length,
       selectMove: !!q(SELECTORS.selectMove).length,
+      // Playback controls exist only while the battle display lags the log.
+      skipTurn: q(SELECTORS.skipTurn).some(el => isVisible(el) && !el.disabled),
+      goToEnd: q(SELECTORS.goToEnd).some(el => isVisible(el) && !el.disabled),
     };
 
     // Screen key: changes on a new request/turn/sub-screen, not on a
@@ -238,6 +243,25 @@ export function createAdapter(options = {}) {
   const cancel = () => clickControl(SELECTORS.cancel);
   const selectSwitch = () => clickControl(SELECTORS.selectSwitch);
   const selectMove = () => clickControl(SELECTORS.selectMove);
+  const skipTurn = () => clickControl(SELECTORS.skipTurn);
+  const goToEnd = () => clickControl(SELECTORS.goToEnd);
+
+  /**
+   * Forfeit the CURRENT battle room via the client's room API (same path the
+   * client's own forfeit popup takes; in a Bo3 game room this concedes the
+   * game, not the set). The caller is responsible for arm-then-confirm.
+   */
+  function forfeit() {
+    if (isTyping()) return false;
+    const room = getRoom();
+    if (!room) return false;
+    const roomId = room.id.replace(/^room-/, '');
+    const app = win.app;
+    const r = app && app.rooms && app.rooms[roomId];
+    if (r && typeof r.send === 'function') { r.send('/forfeit'); return true; }
+    if (app && typeof app.send === 'function') { app.send('/forfeit', roomId); return true; }
+    return false;
+  }
   function gimmick() {
     // Toggle the first visible gimmick checkbox (tera / mega / z / dmax) via
     // a real click on the input, so the client's own change handlers run.
@@ -323,7 +347,7 @@ export function createAdapter(options = {}) {
   }
 
   return {
-    readScreen, activate, back, cancel, gimmick, selectSwitch, selectMove,
+    readScreen, activate, back, cancel, gimmick, selectSwitch, selectMove, skipTurn, goToEnd, forfeit,
     setCursor, clearCursor, setStatus, onControlsChanged, isTyping, getRoom, getControls,
   };
 }

@@ -8,12 +8,16 @@ export const BUTTON = {
   UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15,
 };
 
-// Standard-mapping button index → intent. Forfeit is deliberately unbound.
+// Standard-mapping button index → intent.
+// FORFEIT (Start) is arm-then-confirm in main.js — a single press never forfeits.
 export const BINDINGS = {
   [BUTTON.A]: 'CONFIRM',
   [BUTTON.B]: 'BACK',
   [BUTTON.X]: 'SWITCH_MENU',
   [BUTTON.Y]: 'GIMMICK',
+  [BUTTON.LB]: 'SKIP_TURN',
+  [BUTTON.RB]: 'SKIP_TO_END',
+  [BUTTON.START]: 'FORFEIT',
   [BUTTON.BACK]: 'TOGGLE_LAYER',
   [BUTTON.UP]: 'UP',
   [BUTTON.DOWN]: 'DOWN',

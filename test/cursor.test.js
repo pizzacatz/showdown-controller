@@ -198,10 +198,34 @@ describe('reduce()', () => {
     expect(r.state.index).toBe(1);
     expect(run(initialState(), targetScreen, 'GIMMICK').last).toBe(null);
   });
-  it('directions never emit actions and clamp', () => {
-    const r = run(initialState(), moveScreen(), 'LEFT', 'UP', 'DOWN', 'RIGHT', 'RIGHT', 'RIGHT', 'RIGHT', 'RIGHT');
+  it('directions clamp within a pane and never activate anything', () => {
+    const r = run(initialState(), moveScreen(), 'LEFT', 'UP', 'RIGHT', 'RIGHT', 'RIGHT', 'RIGHT', 'RIGHT');
     expect(r.actions.every(a => a === null)).toBe(true);
-    expect(r.state.index).toBe(3);
+    expect(r.state).toMatchObject({ pane: 'MOVE', index: 3 });
+    const t = run(initialState(), targetScreen, 'UP', 'LEFT', 'DOWN', 'DOWN', 'DOWN');
+    expect(t.actions.every(a => a === null)).toBe(true);
+  });
+  it('↓ off the move row enters the party list, ↑ off the party row returns (desktop stacked layout)', () => {
+    const scr = moveScreen();
+    let r = run(initialState(), scr, 'RIGHT', 'DOWN');
+    expect(r.state).toMatchObject({ pane: 'SWITCH', index: 2 });      // first switchable mon
+    expect(r.last).toEqual({ type: 'selectSwitch' });
+    r = run(r.state, scr, 'DOWN');
+    expect(r.state.pane).toBe('SWITCH');                               // bottom: no-op
+    r = run(r.state, scr, 'RIGHT', 'UP');
+    expect(r.state).toMatchObject({ pane: 'MOVE', index: 1 });         // back on Surf
+    expect(r.last).toEqual({ type: 'selectMove' });
+    r = run(r.state, scr, 'UP');
+    expect(r.state).toMatchObject({ pane: 'MOVE', index: 1 });         // top: no-op
+    expect(run(initialState(), teamScreen(0), 'DOWN').state.pane).toBe('TEAM'); // no party pane → no-op
+  });
+  it('LB/RB skip turn / skip to end only when the playback buttons are on screen', () => {
+    const playing = { key: 'p', panes: {}, controls: { skipTurn: true, goToEnd: true } };
+    expect(run(initialState(), playing, 'SKIP_TURN').last).toEqual({ type: 'skipTurn' });
+    expect(run(initialState(), playing, 'SKIP_TO_END').last).toEqual({ type: 'goToEnd' });
+    expect(run(initialState(), moveScreen(), 'SKIP_TURN').last).toBe(null);
+    expect(run(initialState(), moveScreen(), 'SKIP_TO_END').last).toBe(null);
+    expect(run(initialState(), waitScreen, 'FORFEIT').last).toBe(null); // handled by main, never by the state machine
   });
   it('target grid: navigation from the first foe to the ally and back', () => {
     let r = run(initialState(), targetScreen, 'DOWN');
