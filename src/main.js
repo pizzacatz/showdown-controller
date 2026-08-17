@@ -1,0 +1,137 @@
+// Entry point: wires INPUT → NAVIGATION → ADAPTER.
+import { createGamepadInput, DEFAULTS as INPUT_DEFAULTS } from './gamepad.js';
+import { initialState, reduce, sync } from './cursor.js';
+import { createAdapter } from './showdown-dom.js';
+
+const CONFIG = {
+  debug: false,
+  enabledByDefault: true,
+  toggleKey: { key: 'G', ctrlKey: true, shiftKey: true }, // Ctrl+Shift+G — free in the classic client
+  deadzone: INPUT_DEFAULTS.deadzone,
+  repeatDelay: INPUT_DEFAULTS.repeatDelay,
+  repeatInterval: INPUT_DEFAULTS.repeatInterval,
+};
+
+const TAG = '[showdown-gamepad]';
+const log = (...a) => console.log(TAG, ...a);
+const dbg = (...a) => { if (CONFIG.debug) console.log(TAG, ...a); };
+
+export function start(win = window) {
+  const doc = win.document;
+  const adapter = createAdapter({ doc, win });
+  let state = initialState();
+  let enabled = CONFIG.enabledByDefault;
+  let padSeen = false;
+
+  function paint() {
+    if (!enabled || !padSeen) { adapter.clearCursor(); return; }
+    if (state.pane === 'WAIT' || state.pane === 'INACTIVE') { adapter.clearCursor(); return; }
+    adapter.setCursor(state.pane, state.index);
+  }
+
+  function resync() {
+    const screen = adapter.readScreen();
+    const next = sync(state, screen);
+    if (next.pane !== state.pane || next.index !== state.index || next.focusId !== state.focusId) {
+      dbg('sync →', next.pane, next.index, next.focusId);
+    }
+    state = next;
+    paint();
+  }
+
+  function setEnabled(on) {
+    enabled = !!on;
+    log(enabled ? 'controller layer ON' : 'controller layer OFF (mouse/keyboard unaffected)');
+    paint();
+  }
+
+  function perform(action) {
+    if (!action) return;
+    dbg('action', action);
+    switch (action.type) {
+      case 'activate': adapter.activate(action.pane, action.index, action.id); break;
+      case 'back': adapter.back(); break;
+      case 'cancel': adapter.cancel(); break;
+      case 'gimmick': adapter.gimmick(); break;
+      case 'selectSwitch': adapter.selectSwitch(); break;
+      case 'selectMove': adapter.selectMove(); break;
+      default: break;
+    }
+  }
+
+  function handleIntent(type) {
+    if (type === 'TOGGLE_LAYER') { setEnabled(!enabled); return; }
+    if (!enabled) return;
+    if (adapter.isTyping()) { dbg('ignored (typing):', type); return; }
+    const screen = adapter.readScreen();
+    const { state: next, action } = reduce(state, type, screen);
+    state = next;
+    paint();
+    perform(action);
+  }
+
+  const input = createGamepadInput({
+    deadzone: CONFIG.deadzone,
+    repeatDelay: CONFIG.repeatDelay,
+    repeatInterval: CONFIG.repeatInterval,
+    getGamepads: () => win.navigator.getGamepads(),
+    requestFrame: cb => win.requestAnimationFrame(cb),
+    cancelFrame: id => win.cancelAnimationFrame(id),
+    now: () => win.performance.now(),
+    onEvent: ev => { dbg('intent', ev.type, ev.repeat ? '(repeat)' : ''); handleIntent(ev.type); },
+    onStatus: st => {
+      if (st.type === 'connected') { padSeen = true; log(`controller connected: ${st.id} (index ${st.padIndex})`); resync(); }
+      else if (st.type === 'disconnected') { log('controller disconnected — mouse control only'); adapter.clearCursor(); }
+      else if (st.type === 'nonstandard') { log(`ignoring pad with mapping "${st.pad.mapping}" (need "standard"): ${st.pad.id}`); }
+    },
+  });
+
+  // Pads are invisible to getGamepads() until the first button press; the
+  // browser fires gamepadconnected at that moment. Never warn before then.
+  win.addEventListener('gamepadconnected', () => { input.start(); });
+  win.addEventListener('gamepaddisconnected', () => {
+    const any = Array.from(win.navigator.getGamepads() || []).some(Boolean);
+    if (!any) input.stop();
+  });
+  if (Array.from(win.navigator.getGamepads?.() || []).some(Boolean)) input.start();
+
+  adapter.onControlsChanged(resync);
+
+  // Keyboard escape hatch: Ctrl+Shift+G toggles the layer.
+  win.addEventListener('keydown', e => {
+    const k = CONFIG.toggleKey;
+    if (e.key.toUpperCase() === k.key && !!e.ctrlKey === !!k.ctrlKey && !!e.shiftKey === !!k.shiftKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      setEnabled(!enabled);
+    }
+  }, true);
+
+  log('loaded — press any controller button to activate. Ctrl+Shift+G or Back/Select toggles the layer.');
+
+  // Test / debugging hook. Lets tools/recon.js and the console drive the
+  // layer without a physical pad. Never used by the script itself.
+  win.__showdownGamepad = {
+    inject(intent) { padSeen = true; handleIntent(intent); return this.debug(); },
+    enable(on) { padSeen = true; setEnabled(on); resync(); },
+    debug() {
+      resync();
+      const screen = adapter.readScreen();
+      const p = screen.panes[state.pane];
+      return {
+        enabled, pane: state.pane, index: state.index, focusId: state.focusId,
+        panes: Object.fromEntries(Object.entries(screen.panes).map(([k, v]) => [k, { n: v.items.length, columns: v.columns }])),
+        controls: screen.controls,
+        item: p && p.items[state.index] ? { id: p.items[state.index].id, disabled: p.items[state.index].disabled } : null,
+      };
+    },
+    resync,
+    get state() { return state; },
+    input,
+  };
+}
+
+// Auto-start when running as a userscript (not when imported by tests).
+if (typeof window !== 'undefined' && !window.__showdownGamepadNoAutostart) {
+  const boot = () => { try { start(window); } catch (e) { console.error(TAG, 'failed to start', e); } };
+  if (document.body) boot(); else document.addEventListener('DOMContentLoaded', boot, { once: true });
+}

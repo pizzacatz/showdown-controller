@@ -1,0 +1,19 @@
+{
+  "name": "showdown-controller",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Gamepad control layer for Pokémon Showdown battles (Tampermonkey userscript)",
+  "license": "MIT",
+  "scripts": {
+    "build": "node build.js",
+    "test": "vitest run",
+    "recon": "node tools/recon.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "jsdom": "^24.1.0",
+    "puppeteer-core": "^24.0.0",
+    "vitest": "^2.1.0"
+  }
+}
