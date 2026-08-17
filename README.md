@@ -14,9 +14,17 @@ yourself. Forfeit is deliberately not bound.
 1. Install [Tampermonkey](https://www.tampermonkey.net/) (or Violentmonkey).
 2. Open the raw script and accept the install prompt:
    **[`dist/showdown-gamepad.user.js`](https://raw.githubusercontent.com/pizzacatz/showdown-controller/main/dist/showdown-gamepad.user.js)**
-3. Reload `play.pokemonshowdown.com`, plug in the pad, **press any button once**
-   (browsers hide a pad from pages until its first press). The console logs
-   `[showdown-gamepad] controller connected`.
+3. Reload `play.pokemonshowdown.com`. A small pill in the bottom-right corner
+   says **🎮 Gamepad: press any button on the controller** — plug in the pad and
+   press any button once (browsers hide a pad from pages until its first
+   press). The pill turns green (**Gamepad ON — …**) and the orange cursor
+   appears as soon as a battle shows controls.
+
+If the pill never turns green after a press: open the console (F12) — the
+script logs `[showdown-gamepad] …` lines, including a warning if the pad
+reports a non-`standard` mapping. `navigator.getGamepads()` returning only
+`null`s means the browser itself isn't seeing the pad (Steam's controller
+support can capture it; Chrome is the most reliable).
 
 ## Bindings
 

@@ -27,6 +27,7 @@ export const SELECTORS = {
 };
 
 export const CURSOR_CLASS = 'sgp-cursor';
+export const BADGE_ID = 'sgp-status';
 export const STYLE_ID = 'sgp-cursor-style';
 export const CURSOR_CSS = `
 .${CURSOR_CLASS} {
@@ -40,6 +41,14 @@ export const CURSOR_CSS = `
   outline-color: #b0b0b0 !important;
   box-shadow: 0 0 0 3px rgba(160, 160, 160, 0.4) !important;
 }
+#${BADGE_ID} {
+  position: fixed; right: 8px; bottom: 8px; z-index: 9999;
+  font: 11px/1.4 Verdana, sans-serif; color: #fff;
+  background: rgba(40, 40, 40, 0.85); border-radius: 12px; padding: 3px 10px;
+  pointer-events: none; opacity: 0.9;
+}
+#${BADGE_ID}[data-state="on"] { background: rgba(30, 120, 60, 0.9); }
+#${BADGE_ID}[data-state="off"] { background: rgba(120, 40, 40, 0.9); }
 `;
 
 function textOf(el) {
@@ -251,6 +260,19 @@ export function createAdapter(options = {}) {
     (doc.head || doc.documentElement).appendChild(style);
   }
 
+  /** On-page status pill (bottom-right): 'waiting' | 'on' | 'off'. */
+  function setStatus(state, text) {
+    ensureStyle();
+    let el = doc.getElementById(BADGE_ID);
+    if (!el) {
+      el = doc.createElement('div');
+      el.id = BADGE_ID;
+      (doc.body || doc.documentElement).appendChild(el);
+    }
+    el.dataset.state = state;
+    el.textContent = text;
+  }
+
   function clearCursor() {
     doc.querySelectorAll('.' + CURSOR_CLASS).forEach(el => el.classList.remove(CURSOR_CLASS));
   }
@@ -302,6 +324,6 @@ export function createAdapter(options = {}) {
 
   return {
     readScreen, activate, back, cancel, gimmick, selectSwitch, selectMove,
-    setCursor, clearCursor, onControlsChanged, isTyping, getRoom, getControls,
+    setCursor, clearCursor, setStatus, onControlsChanged, isTyping, getRoom, getControls,
   };
 }

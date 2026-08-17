@@ -23,7 +23,16 @@ export function start(win = window) {
   let enabled = CONFIG.enabledByDefault;
   let padSeen = false;
 
+  function status() {
+    if (!padSeen) adapter.setStatus('waiting', '🎮 Gamepad: press any button on the controller');
+    else if (!enabled) adapter.setStatus('off', '🎮 Gamepad OFF — Back/Select or Ctrl+Shift+G to enable');
+    else if (state.pane === 'WAIT') adapter.setStatus('on', '🎮 Gamepad ON — waiting for opponent (B = cancel)');
+    else if (state.pane === 'INACTIVE') adapter.setStatus('on', '🎮 Gamepad ON — no battle controls on screen');
+    else adapter.setStatus('on', `🎮 Gamepad ON — ${state.pane.toLowerCase().replace('_', ' ')}`);
+  }
+
   function paint() {
+    status();
     if (!enabled || !padSeen) { adapter.clearCursor(); return; }
     if (state.pane === 'WAIT' || state.pane === 'INACTIVE') { adapter.clearCursor(); return; }
     adapter.setCursor(state.pane, state.index);
@@ -81,8 +90,8 @@ export function start(win = window) {
     onEvent: ev => { dbg('intent', ev.type, ev.repeat ? '(repeat)' : ''); handleIntent(ev.type); },
     onStatus: st => {
       if (st.type === 'connected') { padSeen = true; log(`controller connected: ${st.id} (index ${st.padIndex})`); resync(); }
-      else if (st.type === 'disconnected') { log('controller disconnected — mouse control only'); adapter.clearCursor(); }
-      else if (st.type === 'nonstandard') { log(`ignoring pad with mapping "${st.pad.mapping}" (need "standard"): ${st.pad.id}`); }
+      else if (st.type === 'disconnected') { log('controller disconnected — mouse control only'); padSeen = false; adapter.clearCursor(); adapter.setStatus('waiting', '🎮 Gamepad: controller disconnected'); }
+      else if (st.type === 'nonstandard') { log(`ignoring pad with mapping "${st.pad.mapping}" (need "standard"): ${st.pad.id}`); adapter.setStatus('off', `🎮 Gamepad: pad not in "standard" mapping (${st.pad.id.slice(0, 40)}) — see console`); }
     },
   });
 
@@ -107,6 +116,7 @@ export function start(win = window) {
   }, true);
 
   log('loaded — press any controller button to activate. Ctrl+Shift+G or Back/Select toggles the layer.');
+  status();
 
   // Test / debugging hook. Lets tools/recon.js and the console drive the
   // layer without a physical pad. Never used by the script itself.

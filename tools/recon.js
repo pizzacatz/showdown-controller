@@ -271,6 +271,8 @@ async function main() {
       await inRoom(A, () => { app.curRoom.updateControls(); });
       await sleep(200); d = await drive();
       check(d.focusId === focusBefore, `cursor survives a full controls re-render (${focusBefore} → ${d.focusId})`);
+      const badge = await A.evaluate(() => { const b = document.getElementById('sgp-status'); return b && { state: b.dataset.state, text: b.textContent }; });
+      check(badge && badge.state === 'on' && /Gamepad ON/.test(badge.text), `status badge shows ON (${JSON.stringify(badge)})`);
     }
 
     log(`done; ${failures} failure(s); output in ${OUT}`);

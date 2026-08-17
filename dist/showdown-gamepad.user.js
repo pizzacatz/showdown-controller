@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Showdown Gamepad
 // @namespace    https://github.com/pizzacatz/showdown-controller
-// @version      0.1.0
+// @version      0.1.1
 // @description  Play Pokémon Showdown battles with an XInput controller: D-pad/stick cursor, A confirm, B back, X switch menu, Y tera/gimmick. Mouse and keyboard keep working.
 // @author       pizzacatz
 // @license      MIT
@@ -370,6 +370,7 @@
     timer: ".timerbutton, .timer"
   };
   var CURSOR_CLASS = "sgp-cursor";
+  var BADGE_ID = "sgp-status";
   var STYLE_ID = "sgp-cursor-style";
   var CURSOR_CSS = `
 .${CURSOR_CLASS} {
@@ -383,6 +384,14 @@
   outline-color: #b0b0b0 !important;
   box-shadow: 0 0 0 3px rgba(160, 160, 160, 0.4) !important;
 }
+#${BADGE_ID} {
+  position: fixed; right: 8px; bottom: 8px; z-index: 9999;
+  font: 11px/1.4 Verdana, sans-serif; color: #fff;
+  background: rgba(40, 40, 40, 0.85); border-radius: 12px; padding: 3px 10px;
+  pointer-events: none; opacity: 0.9;
+}
+#${BADGE_ID}[data-state="on"] { background: rgba(30, 120, 60, 0.9); }
+#${BADGE_ID}[data-state="off"] { background: rgba(120, 40, 40, 0.9); }
 `;
   function textOf(el) {
     for (const n of el.childNodes) {
@@ -545,6 +554,17 @@
       style.textContent = CURSOR_CSS;
       (doc.head || doc.documentElement).appendChild(style);
     }
+    function setStatus(state, text) {
+      ensureStyle();
+      let el = doc.getElementById(BADGE_ID);
+      if (!el) {
+        el = doc.createElement("div");
+        el.id = BADGE_ID;
+        (doc.body || doc.documentElement).appendChild(el);
+      }
+      el.dataset.state = state;
+      el.textContent = text;
+    }
     function clearCursor() {
       doc.querySelectorAll("." + CURSOR_CLASS).forEach((el) => el.classList.remove(CURSOR_CLASS));
     }
@@ -611,6 +631,7 @@
       selectMove,
       setCursor,
       clearCursor,
+      setStatus,
       onControlsChanged,
       isTyping,
       getRoom,
@@ -639,7 +660,15 @@
     let state = initialState();
     let enabled2 = CONFIG.enabledByDefault;
     let padSeen = false;
+    function status() {
+      if (!padSeen) adapter.setStatus("waiting", "\u{1F3AE} Gamepad: press any button on the controller");
+      else if (!enabled2) adapter.setStatus("off", "\u{1F3AE} Gamepad OFF \u2014 Back/Select or Ctrl+Shift+G to enable");
+      else if (state.pane === "WAIT") adapter.setStatus("on", "\u{1F3AE} Gamepad ON \u2014 waiting for opponent (B = cancel)");
+      else if (state.pane === "INACTIVE") adapter.setStatus("on", "\u{1F3AE} Gamepad ON \u2014 no battle controls on screen");
+      else adapter.setStatus("on", `\u{1F3AE} Gamepad ON \u2014 ${state.pane.toLowerCase().replace("_", " ")}`);
+    }
     function paint() {
+      status();
       if (!enabled2 || !padSeen) {
         adapter.clearCursor();
         return;
@@ -725,9 +754,12 @@
           resync();
         } else if (st.type === "disconnected") {
           log("controller disconnected \u2014 mouse control only");
+          padSeen = false;
           adapter.clearCursor();
+          adapter.setStatus("waiting", "\u{1F3AE} Gamepad: controller disconnected");
         } else if (st.type === "nonstandard") {
           log(`ignoring pad with mapping "${st.pad.mapping}" (need "standard"): ${st.pad.id}`);
+          adapter.setStatus("off", `\u{1F3AE} Gamepad: pad not in "standard" mapping (${st.pad.id.slice(0, 40)}) \u2014 see console`);
         }
       }
     });
@@ -748,6 +780,7 @@
       }
     }, true);
     log("loaded \u2014 press any controller button to activate. Ctrl+Shift+G or Back/Select toggles the layer.");
+    status();
     win.__showdownGamepad = {
       inject(intent) {
         padSeen = true;
