@@ -37,7 +37,7 @@ support can capture it; Chrome is the most reliable).
 | **RB** | Toggle Terastallize / Mega / Z / Dynamax — an `(RB)` hint sits next to the checkbox |
 | **LB** | Skip turn (only while the battle animation is behind) |
 | **Y** | Skip to end (same). The playback buttons are also cursor-selectable with A. |
-| **Select** | Forfeit — press once to arm (the status pill turns red), press again within 4 s to concede; any other button cancels. In a Bo3 this concedes the current game. The pill always shows `(Select) forfeit`. |
+| **Select** | Forfeit — press once to arm (the status pill turns red), press again within 4 s to concede; any other button cancels. In a Bo3 this concedes the current game. An always-on `(Select) Forfeit` tag sits by the Timer button (or on QoL Battle Tools' Forfeit button if you run that script). |
 | **Start** | Turn the whole controller layer on/off |
 | `Ctrl+Shift+G` | Same toggle, from the keyboard |
 
@@ -50,7 +50,7 @@ Team preview, move select, doubles target select, forced switches and the
 "waiting for opponent" state are all covered. Disabled moves and
 active/fainted party slots can be highlighted but never activated.
 
-The cursor is a solid orange outline; a thinner orange box marks which group
+The cursor is a solid orange outline; a faint 1px orange box marks which group
 (moves / party / targets / playback) you're in, and a black-and-white dashed
 ring means "not selectable" (0 PP, active or fainted Pokémon). The cursor
 survives Showdown's turn re-renders by identity (it stays on *Protect*, not on
@@ -89,7 +89,7 @@ a browser.
 
 ```sh
 npm install
-npm test          # unit tests (69)
+npm test          # unit tests (70)
 npm run build     # dist/showdown-gamepad.user.js
 npm run recon -- --script dist/showdown-gamepad.user.js   # e2e vs a LOCAL server
 ```

@@ -44,7 +44,7 @@ export function start(win = window) {
 
   function hints() {
     if (!enabled || !padSeen) { adapter.clearHints(); return; }
-    adapter.paintHints({ gimmick: L('GIMMICK'), skipTurn: L('SKIP_TURN'), goToEnd: L('SKIP_TO_END') });
+    adapter.paintHints({ gimmick: L('GIMMICK'), skipTurn: L('SKIP_TURN'), goToEnd: L('SKIP_TO_END'), forfeit: L('FORFEIT') });
   }
 
   function paint() {

@@ -286,6 +286,30 @@ describe('cursor highlight', () => {
     a.clearHints();
     expect(document.querySelectorAll('.' + HINT_CLASS).length).toBe(0);
   });
+
+  it('always-on forfeit hint: floats in the controls, or attaches to QoL Battle Tools\' Forfeit button', () => {
+    mountRoom('03-move-select');
+    const a = adapter();
+    a.paintHints({ gimmick: 'RB', forfeit: 'Select' });
+    let f = document.querySelector('.sgp-hint-forfeit');
+    expect(f.textContent).toBe('(Select) Forfeit');
+    expect(f.parentElement.classList.contains('battle-controls')).toBe(true);
+    a.paintHints({ gimmick: 'RB', forfeit: 'Select' });
+    expect(document.querySelectorAll('.sgp-hint-forfeit').length).toBe(1);
+    // QoL toolbar appears (as the sibling script renders it, inside .battle-controls)
+    const bar = document.createElement('div'); bar.className = 'qol-battle-toolbar';
+    bar.innerHTML = '<button data-qol="forfeit">Forfeit</button>';
+    document.querySelector('.battle-controls').appendChild(bar);
+    a.paintHints({ gimmick: 'RB', forfeit: 'Select' });
+    expect(document.querySelectorAll('.sgp-hint-forfeit').length).toBe(0);
+    f = document.querySelector('button[data-qol="forfeit"] .' + HINT_CLASS);
+    expect(f.textContent).toBe('(Select) Forfeit');
+    // QoL re-labels its button (textContent wipes children) → next paint restores the tag
+    document.querySelector('button[data-qol="forfeit"]').textContent = 'Confirm forfeit?';
+    a.paintHints({ gimmick: 'RB', forfeit: 'Select' });
+    expect(document.querySelectorAll('button[data-qol="forfeit"] .' + HINT_CLASS).length).toBe(1);
+    expect(document.querySelectorAll('.' + HINT_CLASS).length).toBe(2);
+  });
 });
 
 describe('onControlsChanged', () => {

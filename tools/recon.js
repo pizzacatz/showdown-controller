@@ -295,7 +295,7 @@ async function main() {
         d = await drive();
         check(d.controls.goToEnd === true && d.controls.skipTurn === true, `adapter sees skipTurn/goToEnd (${JSON.stringify(d.controls)})`);
         check(d.pane === 'PLAYBACK' && d.panes.PLAYBACK?.n === 2, `playback buttons are a cursor pane (${d.pane}, ${JSON.stringify(d.panes)})`);
-        const hintTexts = await inRoom(A, r => [...r.querySelectorAll('.battle-controls .sgp-hint')].map(h => h.textContent));
+        const hintTexts = await inRoom(A, r => [...r.querySelectorAll('.battle-controls .sgp-hint:not(.sgp-hint-forfeit)')].map(h => h.textContent));
         check(hintTexts.join(' ') === '(LB) (Y)', `hints painted on skip buttons (${hintTexts.join(' ')})`);
         const boxed = await inRoom(A, r => r.querySelectorAll('.battle-controls .sgp-pane').length);
         check(boxed === 1, `pane box drawn around the playback row (${boxed})`);
@@ -311,6 +311,8 @@ async function main() {
       check(gimHint === '(RB)', `tera checkbox shows the gimmick hint (${gimHint})`);
       badge = await badgeOf();
       check(/\(Select\) forfeit/.test(badge?.text || ''), `pill always shows the forfeit hint (${badge?.text})`);
+      const fh = await inRoom(A, r => r.querySelector('.battle-controls .sgp-hint-forfeit')?.textContent);
+      check(fh === '(Select) Forfeit', `forfeit hint tag is inside the battle controls (${fh})`);
       // Settings panel: click the pill, rebind GIMMICK to LT via a raw press, hint follows
       await A.evaluate(() => document.getElementById('sgp-status').click());
       let panel = await A.evaluate(() => !!document.getElementById('sgp-settings'));

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Showdown Gamepad
 // @namespace    https://github.com/pizzacatz/showdown-controller
-// @version      0.3.0
+// @version      0.3.1
 // @description  Play Pokémon Showdown battles with an XInput controller: D-pad/stick cursor, A confirm, B back, X switch menu, Y tera/gimmick. Mouse and keyboard keep working.
 // @author       pizzacatz
 // @license      MIT
@@ -410,7 +410,9 @@
     skipTurn: 'button[name="skipTurn"]',
     goToEnd: 'button[name="goToEnd"]',
     timer: ".timerbutton, .timer",
-    playback: 'button[name="pause"], button[name="play"], button[name="instantReplay"], button[name="rewindTurn"], button[name="skipTurn"], button[name="goToEnd"]'
+    playback: 'button[name="pause"], button[name="play"], button[name="instantReplay"], button[name="rewindTurn"], button[name="skipTurn"], button[name="goToEnd"]',
+    qolForfeit: 'button[data-qol="forfeit"]'
+    // QoL Battle Tools' arm-then-confirm forfeit button, if installed
   };
   var CURSOR_CLASS = "sgp-cursor";
   var PANE_CLASS = "sgp-pane";
@@ -436,8 +438,10 @@
    an overlay sized to the union of the pane's buttons. */
 .${PANE_CLASS} {
   position: absolute; pointer-events: none; z-index: 1;
-  border: 2px solid #ff8c00; border-radius: 6px; box-sizing: border-box;
+  border: 1px solid rgba(255, 140, 0, 0.2); border-radius: 6px; box-sizing: border-box;
 }
+/* Standalone forfeit hint (top-right of the controls) when no forfeit button exists to attach to. */
+.${HINT_CLASS}.sgp-hint-forfeit { position: absolute; right: 78px; top: 9px; margin: 0; z-index: 3; }
 /* Button hints, e.g. "(RB)" next to Terastallize. */
 .${HINT_CLASS} {
   font: bold 9px/1 Verdana, sans-serif; color: #fff; background: #ff8c00;
@@ -693,19 +697,28 @@
           if (isVisible(el) && !el.disabled) targets.push([el, labels[key]]);
         });
       }
+      let forfeitHost = null;
+      if (labels.forfeit) {
+        const room = getRoom();
+        const qol = room && Array.from(room.querySelectorAll(SELECTORS.qolForfeit)).find(isVisible);
+        forfeitHost = qol || controls;
+        targets.push([forfeitHost, labels.forfeit, forfeitHost === controls ? "sgp-hint-forfeit" : "", "Forfeit"]);
+      }
       const wanted = /* @__PURE__ */ new Set();
-      for (const [host, label] of targets) {
-        let hint = host.querySelector(":scope > ." + HINT_CLASS);
+      for (const [host, label, extraClass = "", suffix = ""] of targets) {
+        const cls = HINT_CLASS + (extraClass ? " " + extraClass : "");
+        let hint = Array.from(host.children).find((c) => c.classList && c.classList.contains(HINT_CLASS) && (extraClass ? c.classList.contains(extraClass) : !c.classList.contains("sgp-hint-forfeit")));
         if (!hint) {
           hint = doc.createElement("span");
-          hint.className = HINT_CLASS;
+          hint.className = cls;
           host.appendChild(hint);
         }
-        const text = `(${label})`;
+        const text = `(${label})${suffix ? " " + suffix : ""}`;
         if (hint.textContent !== text) hint.textContent = text;
         wanted.add(hint);
       }
-      controls.querySelectorAll("." + HINT_CLASS).forEach((h) => {
+      const scope = forfeitHost && forfeitHost !== controls ? getRoom() : controls;
+      (scope || controls).querySelectorAll("." + HINT_CLASS).forEach((h) => {
         if (!wanted.has(h)) h.remove();
       });
     }
@@ -975,7 +988,7 @@
         adapter.clearHints();
         return;
       }
-      adapter.paintHints({ gimmick: L("GIMMICK"), skipTurn: L("SKIP_TURN"), goToEnd: L("SKIP_TO_END") });
+      adapter.paintHints({ gimmick: L("GIMMICK"), skipTurn: L("SKIP_TURN"), goToEnd: L("SKIP_TO_END"), forfeit: L("FORFEIT") });
     }
     function paint() {
       status();
